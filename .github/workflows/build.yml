@@ -1,46 +1,141 @@
 name: Windows Brightness Tool - 自动构建
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发构建
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: write  # 允许上传release资产
     
     steps:
-    - uses: actions/checkout@v4
+    - name: 检出代码
+      uses: actions/checkout@v4
     
-    - name: 设置Python
+    - name: 设置Python环境
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        cache: 'pip'
+        cache: 'pip'  # 缓存pip依赖
     
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller==5.13.2
+        pip install pyinstaller==5.13.2  # 指定PyInstaller版本确保稳定性
     
-    - name: 打包构建
+    - name: 检查图标文件是否存在
+      id: check_icon
       run: |
-        echo "创建版本信息文件..."
-        @"
-VSVersionInfo(ffi=FixedFileInfo(filevers=(1,0,0,0),prodvers=(1,0,0,0),mask=0x3f,flags=0x0,OS=0x40004,fileType=0x1,subtype=0x0,date=(0,0)),kids=[StringFileInfo([StringTable(u'040904B0',[StringStruct(u'FileDescription',u'亮度调节工具'),StringStruct(u'ProductName',u'BrightnessTool')])]),VarFileInfo([VarStruct(u'Translation',[0x409,1200])])])
-"@ | Out-File -FilePath "version_info.txt" -Encoding UTF8
-        
-        pyinstaller --onefile --windowed --name "BrightnessTool" --version-file "version_info.txt" --clean brightness_controller.py
+        if (Test-Path "app.ico") {
+          echo "ICON_EXISTS=true" >> $env:GITHUB_ENV
+        } else {
+          echo "ICON_EXISTS=false" >> $env:GITHUB_ENV
+          # 创建空的图标文件避免PyInstaller报错
+          New-Item -ItemType File -Name "app.ico" -Value "dummy" | Out-Null
+        }
       shell: powershell
     
-    - name: 上传产物
+    - name: 创建版本信息文件（如果不存在）
+      run: |
+        if (-not (Test-Path "version_info.txt")) {
+          @"
+# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([StringTable(u'040904B0', [
+      StringStruct(u'CompanyName', u'BrightnessTool'),
+      StringStruct(u'FileDescription', u'Windows亮度调节工具'),
+      StringStruct(u'FileVersion', u'1.0.0.0'),
+      StringStruct(u'ProductName', u'BrightnessTool'),
+      StringStruct(u'ProductVersion', u'1.0.0.0')
+    ])]),
+    VarFileInfo([VarStruct(u'Translation', [0x409, 1200])])
+  ]
+)
+"@ | Out-File -FilePath "version_info.txt" -Encoding UTF8
+        }
+      shell: powershell
+    
+    - name: 使用PyInstaller打包（无图标版本）
+      if: env.ICON_EXISTS == 'false'
+      run: |
+        pyinstaller ^
+          --onefile ^
+          --windowed ^
+          --name "BrightnessTool" ^
+          --version-file "version_info.txt" ^
+          --clean ^
+          --noupx ^
+          brightness_controller.py
+      shell: cmd
+    
+    - name: 使用PyInstaller打包（带图标版本）
+      if: env.ICON_EXISTS == 'true'
+      run: |
+        pyinstaller ^
+          --onefile ^
+          --windowed ^
+          --name "BrightnessTool" ^
+          --icon "app.ico" ^
+          --version-file "version_info.txt" ^
+          --clean ^
+          --noupx ^
+          brightness_controller.py
+      shell: cmd
+    
+    - name: 验证构建产物
+      run: |
+        dir dist\
+        if exist "dist\BrightnessTool.exe" (echo "构建成功") else (echo "构建失败" && exit 1)
+      shell: cmd
+    
+    - name: 压缩构建产物
+      run: |
+        $tagName = if ($env:GITHUB_REF -match 'refs/tags/(v.*)') { $matches[1] } else { 'latest' }
+        Compress-Archive -Path dist\BrightnessTool.exe -DestinationPath "BrightnessTool_$tagName.zip"
+      shell: powershell
+    
+    - name: 上传构建产物作为Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: BrightnessTool
+        name: BrightnessTool-Windows
         path: dist\BrightnessTool.exe
     
-    - name: 发布Release
+    - name: 发布Release（仅标签推送时）
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v2
       with:
-        files: dist\BrightnessTool.exe
+        files: |
+          BrightnessTool_*.zip
+          dist\BrightnessTool.exe
+        body: |
+          ## BrightnessTool ${{ github.ref_name }}
+          
+          ### 更新内容
+          - 内置DDC/CI功能，无需外部依赖
+          - 支持新旧DDC/CI检测方式切换
+          - 系统托盘滚轮调节亮度
+          - 原生风格亮度提示条
+          
+          ### 使用说明
+          1. 下载BrightnessTool.exe直接运行
+          2. 或解压压缩包后运行
+          3. 首次运行请以管理员身份启动
