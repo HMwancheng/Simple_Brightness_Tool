@@ -33,19 +33,33 @@ jobs:
     
     - name: 创建图标资源文件（可选）
       run: |
-        # 创建简单的RC文件用于exe图标
-        "@echo off" > create_rc.bat
-        "echo IDI_ICON1 ICON DISCARDABLE \"app.ico\" > app.rc" >> create_rc.bat
-        call create_rc.bat
-      shell: cmd
+        # 使用PowerShell创建RC文件
+        "IDI_ICON1 ICON DISCARDABLE `"app.ico`"" | Out-File -FilePath app.rc -Encoding ASCII
+        # 如果没有app.ico文件，创建一个简单的文本文件避免构建错误
+        if (-not (Test-Path "app.ico")) {
+            New-Item -ItemType File -Name "app.ico" -Value "dummy"
+        }
+      shell: powershell
     
-    - name: 使用PyInstaller打包
+    - name: 使用PyInstaller打包（无图标版本）
+      if: ${{ !exists('app.ico') }}
       run: |
         pyinstaller ^
           --onefile ^
           --windowed ^
           --name "BrightnessTool" ^
-          --add-data "icons;icons" ^
+          --clean ^
+          --noupx ^
+          brightness_controller.py
+      shell: cmd
+    
+    - name: 使用PyInstaller打包（带图标版本）
+      if: ${{ exists('app.ico') }}
+      run: |
+        pyinstaller ^
+          --onefile ^
+          --windowed ^
+          --name "BrightnessTool" ^
           --icon "app.ico" ^
           --version-file "version_info.txt" ^
           --clean ^
@@ -60,7 +74,9 @@ jobs:
     
     - name: 压缩构建产物
       run: |
-        powershell Compress-Archive -Path dist\BrightnessTool.exe -DestinationPath BrightnessTool_v${{ github.ref_name }}.zip
+        $tagName = if ($env:GITHUB_REF_NAME -match '^v') { $env:GITHUB_REF_NAME } else { 'latest' }
+        Compress-Archive -Path dist\BrightnessTool.exe -DestinationPath "BrightnessTool_$tagName.zip"
+      shell: powershell
     
     - name: 上传构建产物作为Artifact
       uses: actions/upload-artifact@v4
@@ -73,7 +89,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          BrightnessTool_v${{ github.ref_name }}.zip
+          BrightnessTool_${{ github.ref_name }}.zip
           dist\BrightnessTool.exe
         body: |
           ## BrightnessTool ${{ github.ref_name }}
