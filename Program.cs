@@ -19,7 +19,7 @@ namespace SimpleBrightness
         [STAThread]
         static void Main()
         {
-            using (Mutex mutex = new Mutex(false, "Global\\" + "SimpleBrightness_v7_FinalFix"))
+            using (Mutex mutex = new Mutex(false, "Global\\" + "SimpleBrightness_v8_Stable_Final"))
             {
                 if (!mutex.WaitOne(0, false)) return;
                 ApplicationConfiguration.Initialize();
@@ -28,6 +28,7 @@ namespace SimpleBrightness
         }
     }
 
+    // ================== 核心上下文 ==================
     public class MyCustomApplicationContext : ApplicationContext
     {
         private NotifyIcon trayIcon;
@@ -36,21 +37,23 @@ namespace SimpleBrightness
         private List<MonitorInfo> monitors = new List<MonitorInfo>();
         private AppConfig config;
         private MouseHook mouseHook;
-        private OsdForm osd;
+        
+        // 每个显示器对应一个独立的 OSD 窗口，解决“打架”问题
+        private Dictionary<string, OsdForm> osdForms = new Dictionary<string, OsdForm>();
+        
         private DateTime _lastIconHoverTime = DateTime.MinValue;
 
         public MyCustomApplicationContext()
         {
             config = AppConfig.Load();
             RefreshMonitors();
-            osd = new OsdForm();
-
-            // 启动后异步读取一次真实亮度
+            
+            // 启动异步读取真实亮度
             Task.Run(() => ReadRealBrightness());
 
             contextMenu = new ContextMenuStrip();
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
-            contextMenu.Items.Add("重新扫描显示器", null, (s, e) => { RefreshMonitors(); Task.Run(() => ReadRealBrightness()); });
+            contextMenu.Items.Add("重新扫描", null, (s, e) => { RefreshMonitors(); Task.Run(() => ReadRealBrightness()); });
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("退出", null, (s, e) => {
                 mouseHook?.Uninstall();
@@ -63,7 +66,7 @@ namespace SimpleBrightness
                 Icon = IconDrawer.DrawSunIcon(),
                 ContextMenuStrip = contextMenu,
                 Visible = true,
-                Text = "Simple Brightness (鼠标悬停可滚动调节)"
+                Text = "Simple Brightness (鼠标悬停滚动)"
             };
 
             trayIcon.MouseMove += (s, e) => _lastIconHoverTime = DateTime.Now;
@@ -76,30 +79,17 @@ namespace SimpleBrightness
 
         private void ReadRealBrightness()
         {
-            foreach (var m in monitors)
-            {
+            foreach (var m in monitors) {
                 int realVal = -1;
-                if (m.Type == MonitorType.WMI)
-                {
+                if (m.Type == MonitorType.WMI) {
                     try {
                         var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
                         foreach (ManagementObject obj in searcher.Get()) realVal = int.Parse(obj["CurrentBrightness"].ToString());
                     } catch { }
-                }
-                else if (m.Type == MonitorType.DDC)
-                {
-                    // DDC 读取较慢，可能需要几百毫秒
+                } else if (m.Type == MonitorType.DDC) {
                      realVal = BrightnessController.GetVCPBrightness(m.Handle);
                 }
-
-                if (realVal != -1)
-                {
-                    // 反向插值：如果开启了曲线，需要把真实硬件亮度(y)反推回滑块值(x)吗？
-                    // 这里的逻辑比较复杂。为了简单，我们假设读取到的就是当前值，
-                    // 如果有曲线，这个值可能和滑块不对应。
-                    // 简单处理：更新 LastBrightness，下次操作基于此
-                    m.LastBrightness = realVal;
-                }
+                if (realVal != -1) m.LastBrightness = realVal;
             }
         }
 
@@ -109,10 +99,12 @@ namespace SimpleBrightness
             {
                 _lastIconHoverTime = DateTime.Now; 
                 int change = e.Delta > 0 ? config.ScrollStep : -config.ScrollStep;
+                
+                // 只调节未隐藏的
                 foreach (var m in monitors.Where(x => !config.HiddenMonitors.Contains(x.UniqueId)))
                 {
                     int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
-                    ApplyBrightness(m, newVal, true); // 修复：这里 true，强制尝试更新UI
+                    ApplyBrightness(m, newVal, true); 
                 }
             }
         }
@@ -121,40 +113,46 @@ namespace SimpleBrightness
         {
             m.LastBrightness = val;
             int finalVal = val;
-            if (m.Type == MonitorType.DDC)
-            {
+            if (m.Type == MonitorType.DDC) {
                 var curve = config.GetCurveForMonitor(m.UniqueId);
                 finalVal = Interpolate(val, curve);
             }
             
             Task.Run(() => BrightnessController.SetBrightness(m, finalVal));
-            osd.ShowOSD(val);
+            
+            // 调用对应显示器的 OSD
+            ShowMonitorOsd(m, val);
 
-            // 修复：确保窗口打开时滑块同步动
-            if (updateUi && brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible)
-            {
-                // 使用 Invoke 确保线程安全
+            if (updateUi && brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible) {
                 brightnessWindow.Invoke(new Action(() => brightnessWindow.UpdateSlider(m.UniqueId, val)));
             }
         }
 
-        private int Interpolate(int input, Dictionary<int, int> points)
+        // 显示多实例 OSD
+        private void ShowMonitorOsd(MonitorInfo m, int val)
         {
+            if (!osdForms.ContainsKey(m.UniqueId) || osdForms[m.UniqueId].IsDisposed) {
+                osdForms[m.UniqueId] = new OsdForm(m.Name);
+            }
+            // 在 UI 线程显示
+            var osd = osdForms[m.UniqueId];
+            if (osd.InvokeRequired) osd.Invoke(new Action(() => osd.ShowOSD(val)));
+            else osd.ShowOSD(val);
+        }
+
+        private int Interpolate(int input, Dictionary<int, int> points) {
             var sorted = points.OrderBy(k => k.Key).ToList();
             if (input <= sorted.First().Key) return sorted.First().Value;
             if (input >= sorted.Last().Key) return sorted.Last().Value;
             for (int i = 0; i < sorted.Count - 1; i++) {
                 if (input >= sorted[i].Key && input <= sorted[i+1].Key) {
-                    int x0 = sorted[i].Key; int y0 = sorted[i].Value;
-                    int x1 = sorted[i+1].Key; int y1 = sorted[i+1].Value;
-                    return y0 + (input - x0) * (y1 - y0) / (x1 - x0);
+                    return sorted[i].Value + (input - sorted[i].Key) * (sorted[i+1].Value - sorted[i].Value) / (sorted[i+1].Key - sorted[i].Key);
                 }
             }
             return input;
         }
 
-        private void ShowBrightnessWindow()
-        {
+        private void ShowBrightnessWindow() {
             if (brightnessWindow == null || brightnessWindow.IsDisposed)
                 brightnessWindow = new BrightnessForm(monitors, config, this, contextMenu);
             
@@ -174,36 +172,42 @@ namespace SimpleBrightness
         private void RefreshMonitors()
         {
             monitors.Clear();
+            // WMI
             try {
                 ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
                 foreach (ManagementObject queryObj in searcher.Get()) {
                     string id = queryObj["InstanceName"]?.ToString() ?? "UnknownWmi";
-                    if (!monitors.Any(m => m.InstanceId == id)) monitors.Add(new MonitorInfo { Type = MonitorType.WMI, Name = "内置屏幕", InstanceId = id, UniqueId = "WMI_" + id });
+                    if (!monitors.Any(m => m.InstanceId == id)) monitors.Add(new MonitorInfo { Type = MonitorType.WMI, Name = "内置屏幕", InstanceId = id, UniqueId = "WMI_" + GetStableHash(id) });
                 }
             } catch { }
-
-            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, 
-                delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) 
-                {
-                    int count = 0;
-                    NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
-                    if (count > 0) {
-                        var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
-                        if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs)) {
-                            for (int i = 0; i < pMs.Length; i++) {
-                                var pm = pMs[i];
-                                string desc = new string(pm.szPhysicalMonitorDescription).Trim('\0');
-                                string stableId = "DDC_" + Math.Abs(desc.GetHashCode()) + "_IDX_" + i;
-                                monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = desc, Handle = pm.hPhysicalMonitor, UniqueId = stableId });
-                            }
+            // DDC
+            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) {
+                int count = 0;
+                NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
+                if (count > 0) {
+                    var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
+                    if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs)) {
+                        for (int i = 0; i < pMs.Length; i++) {
+                            string desc = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
+                            // 修复：使用确定性 Hash，解决重启复活问题
+                            string stableId = "DDC_" + GetStableHash(desc) + "_IDX_" + i;
+                            monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = desc, Handle = pMs[i].hPhysicalMonitor, UniqueId = stableId });
                         }
                     }
-                    return true;
-                }, IntPtr.Zero);
+                }
+                return true;
+            }, IntPtr.Zero);
+        }
+
+        // 手写确定性哈希，替代 .NET Core 随机的 GetHashCode
+        private static string GetStableHash(string str) {
+            ulong hash = 5381;
+            foreach (char c in str) hash = ((hash << 5) + hash) + c;
+            return hash.ToString();
         }
     }
 
-    // ================== 主窗口 (修复关闭逻辑) ==================
+    // ================== 主窗口 (动态高度布局) ==================
     public class BrightnessForm : Form
     {
         private List<MonitorInfo> _monitors;
@@ -217,29 +221,34 @@ namespace SimpleBrightness
             _monitors = monitors; _config = config; _context = context;
             this.FormBorderStyle = FormBorderStyle.None; this.ShowInTaskbar = false; this.BackColor = Color.FromArgb(32, 32, 32); 
             this.StartPosition = FormStartPosition.Manual; this.TopMost = true; 
-            
-            // 修复：改回 Deactivate，但增加逻辑判断
-            this.Deactivate += BrightnessForm_Deactivate;
+            this.Deactivate += (s, e) => {
+                if (Application.OpenForms.OfType<CurveEditorForm>().Any() || Application.OpenForms.OfType<SettingsForm>().Any()) return;
+                if (!this.Bounds.Contains(Cursor.Position)) this.Hide(); else this.Activate();
+            };
 
             var visibleMonitors = _monitors.Where(m => !_config.HiddenMonitors.Contains(m.UniqueId)).ToList();
             if (visibleMonitors.Count == 0) visibleMonitors = _monitors; 
 
-            int itemHeight = 150; 
-            int headerHeight = 50;
-            this.Size = new Size(420, headerHeight + (visibleMonitors.Count * itemHeight) + 20); 
+            // 动态计算总高度
+            int totalHeight = 60; // Header
+            foreach (var m in visibleMonitors) totalHeight += (m.Type == MonitorType.WMI ? 90 : 150); // 内置屏矮一点，外接屏高一点
+            this.Size = new Size(420, totalHeight + 10);
 
-            Label title = new Label { Text = "控制中心", Top = 15, Left = 20, ForeColor = Color.White, Font = new Font("Microsoft YaHei UI", 12, FontStyle.Bold), AutoSize = true };
+            Label title = new Label { Text = "控制中心", Top = 20, Left = 20, ForeColor = Color.White, Font = new Font("Microsoft YaHei UI", 12, FontStyle.Bold), AutoSize = true };
             this.Controls.Add(title);
 
-            Button btnSettings = new Button { Text = "⋮", Top = 10, Left = 370, Width = 30, Height = 30, FlatStyle = FlatStyle.Flat, ForeColor = Color.White };
+            Button btnSettings = new Button { Text = "⋮", Top = 15, Left = 370, Width = 30, Height = 30, FlatStyle = FlatStyle.Flat, ForeColor = Color.White };
             btnSettings.FlatAppearance.BorderSize = 0;
             btnSettings.Click += (s, e) => menu.Show(Cursor.Position); 
             this.Controls.Add(btnSettings);
 
-            int y = headerHeight;
+            int y = 60;
             foreach (var m in visibleMonitors)
             {
-                Label lblName = new Label { Text = m.Name, Top = y, Left = 20, ForeColor = Color.LightGray, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9) };
+                int currentItemHeight = (m.Type == MonitorType.WMI ? 90 : 150);
+
+                // 1. 名称 (修复：增加 Top 间距防止被切)
+                Label lblName = new Label { Text = m.Name, Top = y + 5, Left = 20, ForeColor = Color.LightGray, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9) };
                 new ToolTip().SetToolTip(lblName, "右键点击可隐藏此显示器");
                 lblName.MouseClick += (s, e) => {
                     if (e.Button == MouseButtons.Right && MessageBox.Show($"隐藏 \"{m.Name}\"？", "确认", MessageBoxButtons.YesNo) == DialogResult.Yes) {
@@ -248,12 +257,14 @@ namespace SimpleBrightness
                 };
                 this.Controls.Add(lblName);
 
-                Label lblVal = new Label { Text = $"{m.LastBrightness}%", Top = y, Left = 350, ForeColor = Color.Cyan, AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold) };
+                // 2. 数值
+                Label lblVal = new Label { Text = $"{m.LastBrightness}%", Top = y + 5, Left = 350, ForeColor = Color.Cyan, AutoSize = true, Font = new Font("Microsoft YaHei UI", 10, FontStyle.Bold) };
                 _valLabels[m.UniqueId] = lblVal;
                 this.Controls.Add(lblVal);
 
+                // 3. 滑块
                 TrackBar slider = new TrackBar { 
-                    Top = y + 35, Left = 10, Width = 380, Height = 45,
+                    Top = y + 30, Left = 10, Width = 380, Height = 45,
                     Maximum = 100, Minimum = 0, Value = m.LastBrightness,
                     TickStyle = TickStyle.None
                 };
@@ -261,29 +272,29 @@ namespace SimpleBrightness
 
                 Action<int> updateLogic = (newVal) => {
                     lblVal.Text = $"{newVal}%";
-                    _context.ApplyBrightness(m, newVal, false); // 自身拖动不需要反向Update
+                    _context.ApplyBrightness(m, newVal, false);
                 };
-
                 slider.Scroll += (s, e) => updateLogic(slider.Value);
                 slider.MouseWheel += (s, e) => {
                     int change = e.Delta > 0 ? _config.ScrollStep : -_config.ScrollStep;
                     slider.Value = Math.Clamp(slider.Value + change, 0, 100);
-                    updateLogic(slider.Value); 
-                    ((HandledMouseEventArgs)e).Handled = true;
+                    updateLogic(slider.Value); ((HandledMouseEventArgs)e).Handled = true;
                 };
                 this.Controls.Add(slider);
 
+                // 4. 功能键 (仅 DDC 显示)
                 if (m.Type == MonitorType.DDC)
                 {
-                    int btnY = y + 90; 
+                    int btnY = y + 80; 
+                    // 修复：拉宽按钮，防止“编辑曲”
                     Button btnCurve = new Button { 
-                        Text = "编辑曲线", Top = btnY, Left = 20, Width = 80, Height = 35,
+                        Text = "编辑曲线", Top = btnY, Left = 20, Width = 100, Height = 35,
                         FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(60,60,60)
                     };
                     btnCurve.Click += (s, e) => { new CurveEditorForm(m, _config).ShowDialog(); };
                     
                     Button btnPower = new Button { 
-                        Text = "⏻ 电源", Top = btnY, Left = 110, Width = 80, Height = 35,
+                        Text = "⏻ 电源", Top = btnY, Left = 130, Width = 80, Height = 35,
                         FlatStyle = FlatStyle.Flat, ForeColor = Color.LightGreen, BackColor = Color.FromArgb(60,60,60)
                     };
                     btnPower.MouseDown += (s, e) => {
@@ -293,51 +304,27 @@ namespace SimpleBrightness
                     this.Controls.Add(btnPower);
                 }
                 
-                Panel div = new Panel { Top = y + 145, Left = 10, Width = 400, Height = 1, BackColor = Color.FromArgb(50,50,50) };
+                // 分隔线
+                Panel div = new Panel { Top = y + currentItemHeight - 1, Left = 10, Width = 400, Height = 1, BackColor = Color.FromArgb(50,50,50) };
                 this.Controls.Add(div);
 
-                y += itemHeight;
-            }
-        }
-
-        // 核心修复：更智能的关闭判定
-        private void BrightnessForm_Deactivate(object? sender, EventArgs e)
-        {
-            // 如果子窗口打开了，不要关
-            if (Application.OpenForms.OfType<CurveEditorForm>().Any() || Application.OpenForms.OfType<SettingsForm>().Any())
-                return;
-
-            // 检查鼠标是否在窗口矩形内
-            // PointToClient 将屏幕坐标转为窗口坐标，判断是否在 ClientRectangle 内
-            Point cursor = Cursor.Position;
-            if (this.Bounds.Contains(cursor))
-            {
-                // 鼠标还在窗口范围内（比如只是点了一下空白处或者滑块），不要关
-                // 强制重新激活，保持焦点
-                this.Activate(); 
-            }
-            else
-            {
-                // 鼠标确实点到外面去了
-                this.Hide();
+                y += currentItemHeight;
             }
         }
 
         public void UpdateSlider(string id, int val) {
-            if (_sliders.ContainsKey(id)) {
-                _sliders[id].Value = val; 
-                _valLabels[id].Text = val + "%"; 
-            }
+            if (_sliders.ContainsKey(id)) { _sliders[id].Value = val; _valLabels[id].Text = val + "%"; }
         }
     }
 
-    // ================== 曲线编辑器 ==================
+    // ================== 曲线编辑器 (修复Tooltip) ==================
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; private AppConfig _config; private Dictionary<int, int> _currentPoints; private FlowLayoutPanel _panel;
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
             _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(config.GetCurveForMonitor(monitor.UniqueId));
             this.Size = new Size(800, 600); this.BackColor = Color.FromArgb(45, 45, 48); this.StartPosition = FormStartPosition.CenterParent;
+            
             Panel top = new Panel { Dock = DockStyle.Top, Height = 60 }; 
             NumericUpDown num = new NumericUpDown { Value = 50, Top = 15, Left = 15, Width = 80, Font = new Font("Microsoft YaHei UI", 10) };
             Button add = new Button { Text = "添加节点", Top = 12, Left = 110, Height = 35, Width = 120, BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
@@ -350,22 +337,65 @@ namespace SimpleBrightness
             this.Controls.Add(_panel); RefreshSliders();
         }
         private void RefreshSliders() { _panel.Controls.Clear(); if (!_currentPoints.ContainsKey(0)) _currentPoints[0]=0; if(!_currentPoints.ContainsKey(100)) _currentPoints[100]=100; foreach(var k in _currentPoints.Keys.OrderBy(x=>x)) _panel.Controls.Add(CreateItem(k, _currentPoints[k])); }
+        
         private Control CreateItem(int x, int y) { 
              Panel p = new Panel { Width = 80, Height = 450, Margin = new Padding(5), BackColor = Color.FromArgb(60,60,60) };
              Label l = new Label { Text = y.ToString(), Top = 10, Width = 80, Height = 30, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Yellow, Font = new Font("Arial", 16, FontStyle.Bold) };
              TrackBar t = new TrackBar { Orientation = Orientation.Vertical, Minimum = 0, Maximum = 100, Value = y, Top = 50, Height = 320, Width = 45, Left = 17, TickStyle = TickStyle.None };
+             
+             // 修复：添加ToolTip显示当前值
+             ToolTip tip = new ToolTip();
+             t.Scroll += (s, e) => { 
+                 _currentPoints[x] = t.Value; 
+                 l.Text = t.Value.ToString(); 
+                 tip.SetToolTip(t, t.Value.ToString()); // 动态更新鼠标提示
+             };
+             
              Label k = new Label { Text = x + "%", Top = 380, Width = 80, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = new Font("Arial", 10) };
              if(x!=0&&x!=100) { Button d = new Button { Text = "×", Top = 410, Left = 25, Width = 30, Height = 25, ForeColor = Color.Red, FlatStyle=FlatStyle.Flat }; d.Click+=(s,e)=>{_currentPoints.Remove(x);RefreshSliders();}; p.Controls.Add(d); }
-             t.Scroll+=(s,e)=>{_currentPoints[x]=t.Value;l.Text=t.Value.ToString();};
              t.MouseWheel += (s, e) => { int change = e.Delta > 0 ? 1 : -1; t.Value = Math.Clamp(t.Value + change, 0, 100); _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); ((HandledMouseEventArgs)e).Handled = true; };
-             p.Controls.AddRange(new Control[]{l,t,k}); return p;
+             p.Controls.AddRange(new Control[]{l,t,k}); 
+             return p;
+        }
+    }
+
+    // ================== 多实例 OSD ==================
+    public class OsdForm : Form
+    {
+        private System.Windows.Forms.Timer _timer; private int _targetValue = 50; private string _monitorName;
+        public OsdForm(string name) { 
+            _monitorName = name;
+            this.FormBorderStyle = FormBorderStyle.None; this.ShowInTaskbar = false; this.TopMost = true; 
+            this.Size = new Size(220, 60); // 稍微加高一点显示名字
+            this.StartPosition = FormStartPosition.Manual; this.BackColor = Color.Black; this.Opacity = 0.85; this.DoubleBuffered = true; 
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 15, 15)); 
+            _timer = new System.Windows.Forms.Timer { Interval = 1500 }; _timer.Tick += (s, e) => this.Hide(); 
+        }
+        protected override bool ShowWithoutActivation => true; 
+        public void ShowOSD(int value) { 
+            _targetValue = value; 
+            var screen = Screen.FromPoint(Cursor.Position); // 简单跟随鼠标所在屏幕
+            this.Location = new Point(screen.Bounds.X + (screen.Bounds.Width - Width) / 2, screen.Bounds.Bottom - 150); 
+            this.Show(); this.Refresh(); _timer.Stop(); _timer.Start(); 
+        }
+        protected override void OnPaint(PaintEventArgs e) { 
+            base.OnPaint(e); e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; 
+            // 绘制显示器名字
+            TextRenderer.DrawText(e.Graphics, _monitorName, new Font("Microsoft YaHei UI", 9), new Point(15, 5), Color.LightGray);
+            // 绘制进度条
+            Rectangle barRect = new Rectangle(15, 40, 190, 8); 
+            using(var b = new SolidBrush(Color.FromArgb(80, 80, 80))) e.Graphics.FillRectangle(b, barRect); 
+            int w = (int)(190 * (_targetValue / 100.0)); 
+            if (w > 0) e.Graphics.FillRectangle(Brushes.White, 15, 40, w, 8); 
+            // 绘制数值
+            TextRenderer.DrawText(e.Graphics, $"{_targetValue}%", new Font("Microsoft YaHei UI", 12, FontStyle.Bold), new Point(160, 0), Color.White); 
         }
     }
 
     // ================== 设置窗口 (保持不变) ==================
     public class SettingsForm : Form
     {
-        public SettingsForm(AppConfig config) { /* ... 保持不变 ... */
+        public SettingsForm(AppConfig config) {
             this.Text = "设置"; this.Size = new Size(350, 420); this.StartPosition = FormStartPosition.CenterScreen; this.FormBorderStyle = FormBorderStyle.FixedDialog; this.MaximizeBox = false;
             int y = 30;
             CheckBox chkAuto = new CheckBox { Text = "开机自动启动", Top = y, Left = 30, Width = 250, Checked = IsAutoStart(), Font = new Font("Microsoft YaHei UI", 9) };
@@ -384,9 +414,8 @@ namespace SimpleBrightness
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } }
     }
 
-    // ================== 底层辅助 (增加读取真实亮度) ==================
-    public class OsdForm : Form { /* ... 保持不变 ... */ private System.Windows.Forms.Timer _timer; private int _targetValue = 50; public OsdForm() { this.FormBorderStyle = FormBorderStyle.None; this.ShowInTaskbar = false; this.TopMost = true; this.Size = new Size(220, 50); this.StartPosition = FormStartPosition.Manual; this.BackColor = Color.Black; this.Opacity = 0.85; this.DoubleBuffered = true; this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 15, 15)); _timer = new System.Windows.Forms.Timer { Interval = 1500 }; _timer.Tick += (s, e) => this.Hide(); } protected override bool ShowWithoutActivation => true; public void ShowOSD(int value) { _targetValue = value; if (this.InvokeRequired) { this.Invoke(new Action(() => ShowOSD(value))); return; } var screen = Screen.FromPoint(Cursor.Position); this.Location = new Point(screen.Bounds.X + (screen.Bounds.Width - Width) / 2, screen.Bounds.Bottom - 150); this.Show(); this.Refresh(); _timer.Stop(); _timer.Start(); } protected override void OnPaint(PaintEventArgs e) { base.OnPaint(e); e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; Rectangle barRect = new Rectangle(15, 30, 190, 8); using(var b = new SolidBrush(Color.FromArgb(80, 80, 80))) e.Graphics.FillRectangle(b, barRect); int w = (int)(190 * (_targetValue / 100.0)); if (w > 0) e.Graphics.FillRectangle(Brushes.White, 15, 30, w, 8); TextRenderer.DrawText(e.Graphics, $"亮度: {_targetValue}%", new Font("Microsoft YaHei UI", 12, FontStyle.Bold), new Point(15, 4), Color.White); } }
-    public class AppConfig { public int ScrollStep { get; set; } = 5; public List<string> HiddenMonitors { get; set; } = new List<string>(); public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); private static string ConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SimpleBrightness_Config_v5.json"); public static AppConfig Load() { if (File.Exists(ConfigPath)) try { return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath)) ?? new AppConfig(); } catch { } return new AppConfig(); } public void Save() => File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this)); public Dictionary<int, int> GetCurveForMonitor(string id) { if (Curves.ContainsKey(id)) return Curves[id]; return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } }; } }
+    // ================== 底层辅助 ==================
+    public class AppConfig { public int ScrollStep { get; set; } = 5; public List<string> HiddenMonitors { get; set; } = new List<string>(); public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); private static string ConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SimpleBrightness_Config_v8.json"); public static AppConfig Load() { if (File.Exists(ConfigPath)) try { return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath)) ?? new AppConfig(); } catch { } return new AppConfig(); } public void Save() => File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this)); public Dictionary<int, int> GetCurveForMonitor(string id) { if (Curves.ContainsKey(id)) return Curves[id]; return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } }; } }
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }
     public static class IconDrawer { public static Icon DrawSunIcon() { using (Bitmap bmp = new Bitmap(32, 32)) using (Graphics g = Graphics.FromImage(bmp)) { g.SmoothingMode = SmoothingMode.AntiAlias; g.FillEllipse(Brushes.Gold, 9, 9, 14, 14); g.DrawEllipse(new Pen(Color.Orange, 2), 9, 9, 14, 14); Pen rayPen = new Pen(Color.Gold, 3); for (int i = 0; i < 360; i += 45) { double rad = i * Math.PI / 180; float x1 = 16 + (float)(9 * Math.Cos(rad)); float y1 = 16 + (float)(9 * Math.Sin(rad)); float x2 = 16 + (float)(15 * Math.Cos(rad)); float y2 = 16 + (float)(15 * Math.Sin(rad)); g.DrawLine(rayPen, x1, y1, x2, y2); } return Icon.FromHandle(bmp.GetHicon()); } } }
@@ -394,12 +423,7 @@ namespace SimpleBrightness
     public static class BrightnessController { 
         public static void SetBrightness(MonitorInfo monitor, int level) { if (monitor.Type == MonitorType.WMI) { try { var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightnessMethods"); foreach (ManagementObject m in searcher.Get()) m.InvokeMethod("WmiSetBrightness", new object[] { 1, level }); } catch {} } else if (monitor.Type == MonitorType.DDC) { NativeMethods.SetVCPFeature(monitor.Handle, 0x10, (uint)level); } } 
         public static void SetPowerState(MonitorInfo monitor, bool turnOn) { if (monitor.Type == MonitorType.DDC) NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, turnOn ? 0x01u : 0x04u); }
-        // 新增读取真实亮度
-        public static int GetVCPBrightness(IntPtr hMonitor) {
-            uint current = 50, max = 100;
-            if (NativeMethods.GetVCPFeatureAndVCPFeatureReply(hMonitor, 0x10, IntPtr.Zero, ref current, ref max)) return (int)current;
-            return -1;
-        }
+        public static int GetVCPBrightness(IntPtr hMonitor) { uint current = 50, max = 100; if (NativeMethods.GetVCPFeatureAndVCPFeatureReply(hMonitor, 0x10, IntPtr.Zero, ref current, ref max)) return (int)current; return -1; }
     }
     internal static class NativeMethods { 
         [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, IntPtr dwData); public delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData); 
