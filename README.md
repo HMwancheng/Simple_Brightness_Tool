@@ -1,14 +1,21 @@
 # HM's Simple Brightness Tool
 
 一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。  
-专为解决多显示器亮度管理难题而生，支持 DDC/CI 外接显示器与 WMI 内置屏幕。
+~~专为解决多显示器亮度管理难题而生~~（用不惯Twinkle Tray，软件体积大，卡，提交issue也得不到支持。故自己搓一个适合自己体制的程序），支持 DDC/CI 外接显示器与 WMI 内置屏幕。
 
 ![Icon](https://via.placeholder.com/64/GOLD/000000?text=HM) 
+
+## ✨ 独家功能
+
+*   **📈 非线性曲线**：独家支持自定义亮度映射曲线，让亮度阶梯不一致的显示器也能使用相同的亮度映射（调的越细越精准，例如：让 0-28% 对应主屏幕0-55%，83-100% 对应主屏幕92-100%）。
+
+<img width="656" height="240" alt="image" src="https://github.com/user-attachments/assets/82d5cde1-619b-437b-bdd8-71d0d78ef382" />    
+<img width="280" height="240" alt="image" src="https://github.com/user-attachments/assets/13fdc3e7-27e9-4b9f-a811-1bb21a23e2ff" />
+
 
 ## ✨ 核心功能
 
 *   **⚡ 极速调节**：通过任务栏托盘滚轮快速调节亮度。
-*   **📈 非线性曲线**：独家支持自定义亮度映射曲线（例如：让 0-30% 区间更精细，80-100% 区间更快速）。
 *   **🖥️ 全面支持**：同时支持笔记本内置屏幕 (WMI) 和台式机外接显示器 (DDC/CI)。
 *   **🔧 调试模式**：一键切换调试模式，绕过曲线直接控制硬件，方便校准。
 *   **🚀 便携设计**：所有配置保存在软件同级目录，无注册表残留，随拷随用。
@@ -17,7 +24,7 @@
 ## 📖 使用指南
 
 ### 1. 快速调节
-*   将鼠标移动到 **屏幕右下角任务栏托盘区域**。
+*   将鼠标移动到 **屏幕右下角任务栏托盘区域图标上**。
 *   **滚动滚轮** 即可调节亮度。
 *   *注意：为了防止误触，鼠标必须停留在任务栏托盘范围内，移出范围即停止响应。*
 
@@ -38,7 +45,7 @@
 A: 这是一个开源的个人项目，没有购买昂贵的数字证书。初次运行可能会被 Windows SmartScreen 拦截，选择“仍要运行”即可。
 
 **Q: 为什么滚轮调节有时不灵敏？**  
-A: 本软件采用“零侵入”设计，通过检测鼠标下方的窗口类名来判定意图。请确保鼠标指针位于任务栏托盘图标区域内。
+A: 本软件采用“零侵入”设计，通过检测鼠标下方的窗口类名来判定意图，为此有一定操作方面的妥协。请确保鼠标指针位于任务栏托盘图标区域内，无反应时轻微移动鼠标即可。
 
 **Q: 配置文件在哪里？**  
 A: 在软件同级目录下的 `HMSimpleBrightness_Config.json`。
@@ -49,4 +56,4 @@ A: 在软件同级目录下的 `HMSimpleBrightness_Config.json`。
 *   Windows Forms (WinForms)
 
 ---
-*Created by HM. Enjoy your comfortable brightness!*
+*Created by HMwancheng. Enjoy your comfortable brightness!*
