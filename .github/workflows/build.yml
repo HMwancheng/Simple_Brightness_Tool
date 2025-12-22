@@ -1,57 +1,31 @@
-name: Build BrightnessTool
+name: Build Brightness Tool
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
-    permissions:
-      contents: write
-    
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install PyQt6>=6.6.0
-          pip install screen-brightness-control>=0.24.0
-          pip install pywin32>=306
-          pip install psutil>=5.9.5
-          pip install pyinstaller==5.13.2
-      
-      - name: Create simple version file
-        run: |
-          echo "VSVersionInfo(ffi=FixedFileInfo(filevers=(1,0,0,0),prodvers=(1,0,0,0),mask=0x3f,flags=0x0,OS=0x40004,fileType=0x1,subtype=0x0,date=(0,0)),kids=[StringFileInfo([StringTable(u'040904B0',[StringStruct(u'FileDescription',u'BrightnessTool'),StringStruct(u'ProductName',u'BrightnessTool')])]),VarFileInfo([VarStruct(u'Translation',[0x409,1200])])])" > version_info.txt
-        shell: cmd
-      
-      - name: Build executable
-        run: pyinstaller --onefile --windowed --name "BrightnessTool" --version-file "version_info.txt" --clean brightness_controller.py
-        shell: cmd
-      
-      - name: Verify build
-        run: if exist "dist\BrightnessTool.exe" (echo Build success) else (exit 1)
-        shell: cmd
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: BrightnessTool-Windows
-          path: dist\BrightnessTool.exe
-      
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist\BrightnessTool.exe
-          body: "BrightnessTool release ${{ github.ref_name }}"
+    - uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Publish (Build EXE)
+      # 生成单个EXE，不包含庞大的运行库(假设你电脑有.NET8)，如果想要完全绿色版把 --self-contained false 改为 true
+      run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o build_output
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SimpleBrightnessTool
+        path: build_output/*.exe
