@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 生成单文件，体积小 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained> 
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <!-- 引用 System.Management 用于 WMI (笔记本屏幕) -->
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+</Project>
