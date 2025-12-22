@@ -1,5 +1,0 @@
-PyQt6>=6.6.0
-screen-brightness-control>=0.24.0
-pywin32>=306
-psutil>=5.9.5
-PyInstaller>=5.13.2
