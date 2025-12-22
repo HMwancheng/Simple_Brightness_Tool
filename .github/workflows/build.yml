@@ -2,7 +2,7 @@ name: Build Brightness Tool
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "GMN" ]
   workflow_dispatch:
 
 jobs:
