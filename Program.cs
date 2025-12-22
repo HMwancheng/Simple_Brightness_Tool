@@ -19,7 +19,10 @@ namespace SimpleBrightness
         [STAThread]
         static void Main()
         {
-            using (Mutex mutex = new Mutex(false, "Global\\" + "SimpleBrightness_v9_Modern_Final"))
+            // 尝试开启高DPI模式，防止在高分屏下模糊或错位
+            try { Application.SetHighDpiMode(HighDpiMode.PerMonitorV2); } catch { }
+
+            using (Mutex mutex = new Mutex(false, "Global\\" + "SimpleBrightness_v10_Final_Layout_Fix"))
             {
                 if (!mutex.WaitOne(0, false)) return;
                 ApplicationConfiguration.Initialize();
@@ -141,8 +144,13 @@ namespace SimpleBrightness
                 brightnessWindow = new BrightnessForm(monitors, config, this, contextMenu);
             
             var screen = Screen.FromPoint(Cursor.Position);
-            int x = screen.WorkingArea.Right - brightnessWindow.Width - 10;
-            int y = screen.WorkingArea.Bottom - brightnessWindow.Height - 10;
+            
+            // 修复：间距改为 2px，紧贴任务栏
+            int gap = 2; 
+            int x = screen.WorkingArea.Right - brightnessWindow.Width - gap;
+            int y = screen.WorkingArea.Bottom - brightnessWindow.Height - gap;
+            
+            // 防止越界
             if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + 50;
             if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + 10;
 
@@ -152,7 +160,6 @@ namespace SimpleBrightness
         }
 
         private void ShowSettings() { 
-            // 允许非模态打开
             var form = new SettingsForm(config);
             form.Show();
         }
@@ -160,7 +167,6 @@ namespace SimpleBrightness
         public void RefreshMonitors()
         {
             monitors.Clear();
-            // WMI
             try {
                 ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
                 foreach (ManagementObject queryObj in searcher.Get()) {
@@ -172,7 +178,6 @@ namespace SimpleBrightness
                     }
                 }
             } catch { }
-            // DDC
             NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) {
                 int count = 0;
                 NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
@@ -198,7 +203,7 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== 主窗口 (Modern UI) ==================
+    // ================== 主窗口 (修复尺寸) ==================
     public class BrightnessForm : Form
     {
         private List<MonitorInfo> _monitors;
@@ -212,12 +217,11 @@ namespace SimpleBrightness
             _monitors = monitors; _config = config; _context = context;
             this.FormBorderStyle = FormBorderStyle.None; 
             this.ShowInTaskbar = false; 
-            this.BackColor = Color.FromArgb(31, 31, 31); // 深色背景
+            this.BackColor = Color.FromArgb(31, 31, 31); 
             this.StartPosition = FormStartPosition.Manual; 
             this.TopMost = true;
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18)); // 圆角
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18)); 
 
-            // 点击外部关闭逻辑
             this.Deactivate += (s, e) => {
                 if (Application.OpenForms.OfType<CurveEditorForm>().Any() || Application.OpenForms.OfType<SettingsForm>().Any() || Application.OpenForms.OfType<InputBox>().Any()) return;
                 if (!this.Bounds.Contains(Cursor.Position)) this.Hide(); else this.Activate();
@@ -226,18 +230,17 @@ namespace SimpleBrightness
             var visibleMonitors = _monitors.Where(m => !_config.HiddenMonitors.Contains(m.UniqueId)).ToList();
             if (visibleMonitors.Count == 0) visibleMonitors = _monitors; 
 
-            // 计算高度
+            // 修复：加大尺寸，WMI高140，DDC高200
             int headerHeight = 60;
             int totalHeight = headerHeight + 20; 
-            foreach (var m in visibleMonitors) totalHeight += (m.Type == MonitorType.WMI ? 100 : 170); // 增加高度
-            this.Size = new Size(440, totalHeight);
+            foreach (var m in visibleMonitors) totalHeight += (m.Type == MonitorType.WMI ? 140 : 200); 
+            // 修复：加宽到 480 防止滑块显示不全
+            this.Size = new Size(480, totalHeight);
 
-            // 标题
             Label title = new Label { Text = "Control Center", Top = 20, Left = 20, ForeColor = Color.White, Font = new Font("Segoe UI", 14, FontStyle.Bold), AutoSize = true };
             this.Controls.Add(title);
 
-            // 菜单按钮
-            Button btnSettings = new Button { Text = "☰", Top = 18, Left = 390, Width = 35, Height = 35, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Cursor = Cursors.Hand };
+            Button btnSettings = new Button { Text = "☰", Top = 18, Left = 430, Width = 35, Height = 35, FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Cursor = Cursors.Hand };
             btnSettings.FlatAppearance.BorderSize = 0;
             btnSettings.Click += (s, e) => menu.Show(Cursor.Position); 
             this.Controls.Add(btnSettings);
@@ -245,20 +248,16 @@ namespace SimpleBrightness
             int y = headerHeight;
             foreach (var m in visibleMonitors)
             {
-                int itemH = (m.Type == MonitorType.WMI ? 100 : 170);
+                // 修复：大幅增加行高
+                int itemH = (m.Type == MonitorType.WMI ? 140 : 200);
                 
-                // 1. 名字 (支持重命名)
-                Label lblName = new Label { Text = m.Name, Top = y, Left = 20, ForeColor = Color.LightGray, AutoSize = true, Font = new Font("Segoe UI", 10), Cursor = Cursors.Hand };
-                
-                // 右键菜单：隐藏 + 重命名
+                // 1. 名字
+                Label lblName = new Label { Text = m.Name, Top = y + 5, Left = 20, ForeColor = Color.LightGray, AutoSize = true, Font = new Font("Segoe UI", 10), Cursor = Cursors.Hand };
                 ContextMenuStrip nameMenu = new ContextMenuStrip();
                 nameMenu.Items.Add("重命名", null, (s, e) => {
                     InputBox input = new InputBox("重命名显示器", "请输入新名称:", m.Name);
                     if (input.ShowDialog() == DialogResult.OK) {
-                        _config.CustomNames[m.UniqueId] = input.ResultText;
-                        _config.Save();
-                        _context.RefreshMonitors(); // 刷新列表
-                        this.Close(); // 关闭窗口等待下次打开刷新UI
+                        _config.CustomNames[m.UniqueId] = input.ResultText; _config.Save(); _context.RefreshMonitors(); this.Close(); 
                     }
                 });
                 nameMenu.Items.Add("隐藏此显示器", null, (s, e) => {
@@ -270,13 +269,13 @@ namespace SimpleBrightness
                 this.Controls.Add(lblName);
 
                 // 2. 数值
-                Label lblVal = new Label { Text = $"{m.LastBrightness}%", Top = y, Left = 380, ForeColor = Color.Cyan, AutoSize = true, Font = new Font("Segoe UI", 11, FontStyle.Bold), TextAlign = ContentAlignment.TopRight };
+                Label lblVal = new Label { Text = $"{m.LastBrightness}%", Top = y + 5, Left = 420, ForeColor = Color.Cyan, AutoSize = true, Font = new Font("Segoe UI", 11, FontStyle.Bold), TextAlign = ContentAlignment.TopRight };
                 _valLabels[m.UniqueId] = lblVal;
                 this.Controls.Add(lblVal);
 
-                // 3. 滑块
+                // 3. 滑块 (修复：加高到 60px，加宽，向下移)
                 TrackBar slider = new TrackBar { 
-                    Top = y + 30, Left = 15, Width = 400, Height = 45, 
+                    Top = y + 35, Left = 15, Width = 440, Height = 60, 
                     Maximum = 100, Minimum = 0, Value = m.LastBrightness, 
                     TickStyle = TickStyle.None, Cursor = Cursors.Hand
                 };
@@ -291,27 +290,23 @@ namespace SimpleBrightness
                 };
                 this.Controls.Add(slider);
 
-                // 4. 按钮组 (仅 DDC)
+                // 4. 按钮 (修复：向下移，确保不挡滑块)
                 if (m.Type == MonitorType.DDC)
                 {
-                    int btnY = y + 85; // 确保不被遮挡
+                    int btnY = y + 100; 
                     
-                    Button btnCurve = CreateModernButton("编辑曲线", btnY, 20, 100);
-                    btnCurve.Click += (s, e) => { 
-                        var editor = new CurveEditorForm(m, _config);
-                        editor.Show(this); // 非模态打开
-                    };
+                    Button btnCurve = CreateModernButton("编辑曲线", btnY, 20, 120); // 加宽按钮
+                    btnCurve.Click += (s, e) => { var editor = new CurveEditorForm(m, _config); editor.Show(this); };
                     this.Controls.Add(btnCurve);
 
-                    Button btnPower = CreateModernButton("⏻ 电源", btnY, 130, 80);
+                    Button btnPower = CreateModernButton("⏻ 电源", btnY, 150, 80);
                     btnPower.ForeColor = Color.LightGreen;
                     btnPower.MouseDown += (s, e) => { Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left)); };
                     this.Controls.Add(btnPower);
                 }
 
-                // 分隔线
                 if (m != visibleMonitors.Last()) {
-                    Panel div = new Panel { Top = y + itemH - 10, Left = 20, Width = 400, Height = 1, BackColor = Color.FromArgb(50, 50, 50) };
+                    Panel div = new Panel { Top = y + itemH - 10, Left = 20, Width = 440, Height = 1, BackColor = Color.FromArgb(50, 50, 50) };
                     this.Controls.Add(div);
                 }
                 y += itemH;
@@ -320,12 +315,12 @@ namespace SimpleBrightness
 
         private Button CreateModernButton(string text, int top, int left, int width) {
             Button btn = new Button {
-                Text = text, Top = top, Left = left, Width = width, Height = 36,
+                Text = text, Top = top, Left = left, Width = width, Height = 40, // 增加高度
                 FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(50, 50, 50),
-                Cursor = Cursors.Hand, Font = new Font("Segoe UI", 9)
+                Cursor = Cursors.Hand, Font = new Font("Segoe UI", 10)
             };
             btn.FlatAppearance.BorderSize = 0;
-            btn.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, width, 36, 10, 10)); // 按钮圆角
+            btn.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, width, 40, 10, 10));
             return btn;
         }
 
@@ -334,27 +329,28 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== 曲线编辑器 (优化显示与交互) ==================
+    // ================== 曲线编辑器 (修复对齐) ==================
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; private AppConfig _config; private Dictionary<int, int> _currentPoints; private FlowLayoutPanel _panel;
         
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
             _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(config.GetCurveForMonitor(monitor.UniqueId));
-            this.Size = new Size(800, 600); 
+            this.Size = new Size(850, 650); 
             this.BackColor = Color.FromArgb(31, 31, 31); 
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Text = "Curve Editor";
 
-            // 顶部面板
-            Panel top = new Panel { Dock = DockStyle.Top, Height = 80, BackColor = Color.FromArgb(25, 25, 25) };
+            // 修复：使用 FlowLayoutPanel 自动排列顶部工具栏
+            FlowLayoutPanel top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(25, 25, 25), Padding = new Padding(15, 12, 0, 0), AutoSize = false };
             
-            // 显示器名字标题
-            Label title = new Label { Text = $"正在编辑: {monitor.Name}", Top = 10, Left = 20, AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold) };
+            Label title = new Label { Text = $"编辑: {monitor.Name}", AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold), Margin = new Padding(0, 5, 20, 0) };
             
-            NumericUpDown num = new NumericUpDown { Value = 50, Top = 45, Left = 20, Width = 80, Font = new Font("Segoe UI", 10) };
-            Button add = new Button { Text = "添加节点", Top = 42, Left = 110, Height = 30, Width = 100, BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-            Button save = new Button { Text = "保存并生效", Top = 42, Left = 650, Height = 30, Width = 100, BackColor = Color.Teal, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat };
+            NumericUpDown num = new NumericUpDown { Value = 50, Width = 80, Font = new Font("Segoe UI", 10) };
+            Button add = new Button { Text = "添加节点", Width = 100, Height = 30, BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Margin = new Padding(10, 0, 10, 0) };
+            
+            // 修复：Save按钮放在右侧
+            Button save = new Button { Text = "保存并生效", Width = 120, Height = 30, BackColor = Color.Teal, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, Margin = new Padding(50, 0, 0, 0) };
             
             add.Click += (s, e) => { int x = (int)num.Value; if (!_currentPoints.ContainsKey(x)) { _currentPoints[x] = x; RefreshSliders(); }};
             save.Click += (s, e) => { _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); _config.Save(); this.Close(); };
@@ -373,15 +369,8 @@ namespace SimpleBrightness
              Panel p = new Panel { Width = 90, Height = 400, Margin = new Padding(10), BackColor = Color.FromArgb(45,45,45) };
              Label l = new Label { Text = y.ToString(), Top = 10, Width = 90, Height = 30, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Yellow, Font = new Font("Segoe UI", 14, FontStyle.Bold) };
              TrackBar t = new TrackBar { Orientation = Orientation.Vertical, Minimum = 0, Maximum = 100, Value = y, Top = 50, Height = 300, Width = 45, Left = 22, TickStyle = TickStyle.None };
-             
-             // ToolTip 实时显示数值
              ToolTip tip = new ToolTip();
-             t.Scroll += (s, e) => { 
-                 _currentPoints[x] = t.Value; 
-                 l.Text = t.Value.ToString(); 
-                 tip.SetToolTip(t, t.Value.ToString());
-             };
-             
+             t.Scroll += (s, e) => { _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); tip.SetToolTip(t, t.Value.ToString()); };
              Label k = new Label { Text = x + "%", Top = 360, Width = 90, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = new Font("Segoe UI", 9) };
              if(x!=0&&x!=100) { 
                  Button d = new Button { Text = "×", Top = 380, Left = 30, Width = 30, Height = 20, ForeColor = Color.Red, FlatStyle=FlatStyle.Flat, BackColor = Color.Transparent }; 
