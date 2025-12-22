@@ -24,8 +24,7 @@ namespace SimpleBrightness
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // 互斥体名称修改，防止和旧版本冲突
-            using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v17_Portable"))
+            using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v17_FinalRelease"))
             {
                 if (!mutex.WaitOne(0, false)) return;
                 ApplicationConfiguration.Initialize();
@@ -79,6 +78,7 @@ namespace SimpleBrightness
                 Text = "HM's Simple Brightness Tool"
             };
 
+            // 核心逻辑：只有这里更新时间
             trayIcon.MouseMove += (s, e) => _lastIconHoverTime = DateTime.Now;
             trayIcon.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) ShowBrightnessWindow(); };
 
@@ -108,14 +108,11 @@ namespace SimpleBrightness
 
         private void OnGlobalMouseWheel(object? sender, MouseEventArgs e)
         {
-            // 判定逻辑：时间窗口有效 + 必须处于任务栏/托盘区域
-            bool isRecentHover = (DateTime.Now - _lastIconHoverTime).TotalSeconds < 0.8;
-            
-            // 逻辑更新：如果在 TrayArea (托盘/溢出区/副屏托盘) 则直接允许
-            // 如果在 Taskbar (任务栏主条) 且最近划过图标，也允许
-            if (IsMouseOverTrayArea() || (isRecentHover && IsMouseOverTaskbar()))
+            // 修复逻辑：只判断时间窗口 (1.5秒内)。
+            // 移除了 IsMouseOverTaskbar，因为这会导致无法在图标上滚动。
+            // 移除了 _lastIconHoverTime 更新，这样如果鼠标不动，1.5秒后自动失效（冷却机制）。
+            if ((DateTime.Now - _lastIconHoverTime).TotalSeconds < 1.5)
             {
-                _lastIconHoverTime = DateTime.Now; 
                 int change = e.Delta > 0 ? config.ScrollStep : -config.ScrollStep;
                 foreach (var m in monitors.Where(x => !config.HiddenMonitors.Contains(x.UniqueId)))
                 {
@@ -123,30 +120,6 @@ namespace SimpleBrightness
                     ApplyBrightness(m, newVal, true); 
                 }
             }
-        }
-
-        private bool IsMouseOverTrayArea() {
-            IntPtr hWnd = NativeMethods.WindowFromPoint(Cursor.Position);
-            return IsWindowOrParent(hWnd, new[] { "TrayNotifyWnd", "NotifyIconOverflowWindow", "Shell_SecondaryTrayWnd" });
-        }
-
-        private bool IsMouseOverTaskbar() {
-            IntPtr hWnd = NativeMethods.WindowFromPoint(Cursor.Position);
-            return IsWindowOrParent(hWnd, new[] { "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "NotifyIconOverflowWindow" });
-        }
-
-        private bool IsWindowOrParent(IntPtr hWnd, string[] targetClasses) {
-            if (hWnd == IntPtr.Zero) return false;
-            for (int i = 0; i < 5; i++) {
-                StringBuilder sb = new StringBuilder(256);
-                NativeMethods.GetClassName(hWnd, sb, 256);
-                string className = sb.ToString();
-                if (targetClasses.Contains(className)) return true;
-                if (className == "Shell_TrayWnd" && !targetClasses.Contains("Shell_TrayWnd")) return false; // 阻断误判
-                hWnd = NativeMethods.GetParent(hWnd);
-                if (hWnd == IntPtr.Zero) break;
-            }
-            return false;
         }
 
         public void ApplyBrightness(MonitorInfo m, int val, bool updateUi = true)
@@ -238,7 +211,7 @@ namespace SimpleBrightness
     {
         public HelpForm()
         {
-            this.Text = "关于 & 说明"; this.Size = new Size(500, 420); this.StartPosition = FormStartPosition.CenterScreen;
+            this.Text = "关于 & 说明"; this.Size = new Size(520, 450); this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog; this.MaximizeBox = false; this.MinimizeBox = false;
             this.BackColor = Color.FromArgb(31, 31, 31); this.ForeColor = Color.White;
 
@@ -246,31 +219,31 @@ namespace SimpleBrightness
             
             TextBox info = new TextBox { 
                 Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                Top = 60, Left = 20, Width = 440, Height = 250,
+                Top = 60, Left = 20, Width = 460, Height = 280,
                 BackColor = Color.FromArgb(45, 45, 45), ForeColor = Color.LightGray, BorderStyle = BorderStyle.None,
                 Font = new Font("Segoe UI", 9),
                 Text = 
-@"【功能简介】
-本软件旨在为内置屏幕(WMI)和外接显示器(DDC/CI)提供统一、轻量的亮度调节方案。支持自定义非线性亮度曲线，解决不同显示器亮度响应不一致的问题。
+@"HM's Simple Brightness Tool
+
+一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。
+(用不惯Twinkle Tray，软件体积大，卡，提交issue也得不到支持。故自己搓一个适合自己体制的程序)
+
+【独家功能：非线性曲线】
+独家支持自定义亮度映射曲线，让亮度阶梯不一致的显示器也能使用相同的亮度映射。
+例如：让 0-28% 对应主屏幕0-55%，83-100% 对应主屏幕92-100%。
 
 【滚轮调节操作】
-1. 将鼠标悬停在任务栏托盘区域（右下角）。
-2. 直接滚动滚轮即可调节亮度。
-3. 鼠标不需要精确对准本软件图标，只要在托盘区即可。
-
-【为什么这样设计？（技术妥协）】
-为了保持软件极度轻量（<1MB）且不被杀毒软件拦截，本软件使用“窗口类名检测”而非“进程注入”或“Accessibility API”。
-这意味着我们无法精确知道本软件图标在托盘的哪个像素点，只能检测鼠标是否在“托盘条”这个整体范围内。
-因此，当您的鼠标移出任务栏区域时，调节会立即停止。这是一种为了性能和稳定性的有意妥协。
+1. 将鼠标悬停在任务栏托盘区域的【本软件图标】上。
+2. 激活后，滚动滚轮即可调节。
+3. 离开图标 1.5 秒后，调节功能会自动关闭（防止误触）。
 
 【配置文件】
 配置文件保存在软件同级目录下的 'HMSimpleBrightness_Config.json'。
 您可以将本文件夹移动到任何位置（便携模式）。"
             };
-            // 取消选择
             info.SelectionLength = 0;
 
-            Button btnOk = new Button { Text = "关闭", Top = 330, Left = 360, Width = 100, Height = 35, BackColor = Color.Teal, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, DialogResult = DialogResult.OK };
+            Button btnOk = new Button { Text = "关闭", Top = 360, Left = 380, Width = 100, Height = 35, BackColor = Color.Teal, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, DialogResult = DialogResult.OK };
             
             this.Controls.Add(title); this.Controls.Add(info); this.Controls.Add(btnOk);
         }
@@ -349,22 +322,33 @@ namespace SimpleBrightness
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; private AppConfig _config; private Dictionary<int, int> _currentPoints; private FlowLayoutPanel _panel;
+        
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
             _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(config.GetCurveForMonitor(monitor.UniqueId));
             this.Size = new Size(850, 500); this.BackColor = Color.FromArgb(31, 31, 31); this.StartPosition = FormStartPosition.CenterScreen; this.Text = "Curve Editor";
+            
             Panel top = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(25, 25, 25) };
             Label title = new Label { Text = $"编辑: {monitor.Name}", Location = new Point(15, 18), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold) };
-            // 对齐修复：数值框上调5px
-            NumericUpDown num = new NumericUpDown { Value = 50, Width = 80, Location = new Point(350, 18), Font = new Font("Segoe UI", 10) };
-            // 对齐修复：按钮加宽
+            
+            // 修复：数值框上调 5px (原13 -> 8)
+            NumericUpDown num = new NumericUpDown { Value = 50, Width = 80, Location = new Point(350, 8), Font = new Font("Segoe UI", 10) };
+            
+            // 修复：按钮文字修正 "添加节点"，宽度充足
             Button add = new Button { Text = "添加节点", Width = 110, Height = 34, Location = new Point(440, 13), BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             Button save = new Button { Text = "保存并生效", Width = 120, Height = 34, Location = new Point(700, 13), BackColor = Color.Teal, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat };
+            
             add.Click += (s, e) => { int x = (int)num.Value; if (!_currentPoints.ContainsKey(x)) { _currentPoints[x] = x; RefreshSliders(); }};
             save.Click += (s, e) => { _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); _config.Save(); this.Close(); };
-            top.Controls.AddRange(new Control[] { title, num, add, save }); this.Controls.Add(top);
-            _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 10, 0, 0) }; this.Controls.Add(_panel); RefreshSliders();
+            
+            top.Controls.AddRange(new Control[] { title, num, add, save });
+            this.Controls.Add(top);
+            
+            _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 10, 0, 0) };
+            this.Controls.Add(_panel); RefreshSliders();
         }
+        
         private void RefreshSliders() { _panel.Controls.Clear(); if (!_currentPoints.ContainsKey(0)) _currentPoints[0]=0; if(!_currentPoints.ContainsKey(100)) _currentPoints[100]=100; foreach(var k in _currentPoints.Keys.OrderBy(x=>x)) _panel.Controls.Add(CreateItem(k, _currentPoints[k])); }
+        
         private Control CreateItem(int x, int y) { 
              Panel p = new Panel { Width = 70, Height = 320, Margin = new Padding(8), BackColor = Color.FromArgb(45,45,45) };
              Label l = new Label { Text = y.ToString(), Top = 20, Width = 70, Height = 20, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Yellow, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
@@ -400,23 +384,19 @@ namespace SimpleBrightness
     }
     public class SettingsForm : Form { public SettingsForm(AppConfig config) { this.Text = "设置"; this.Size = new Size(350, 420); this.StartPosition = FormStartPosition.CenterScreen; this.FormBorderStyle = FormBorderStyle.FixedDialog; this.MaximizeBox = false; int y = 30; CheckBox chkAuto = new CheckBox { Text = "开机自动启动", Top = y, Left = 30, Width = 250, Checked = IsAutoStart(), Font = new Font("Microsoft YaHei UI", 9) }; this.Controls.Add(chkAuto); y += 60; Label lblStep = new Label { Text = "滚轮步长 (1-20):", Top = y, Left = 30, AutoSize = true, Font = new Font("Microsoft YaHei UI", 9) }; NumericUpDown numStep = new NumericUpDown { Value = config.ScrollStep, Minimum = 1, Maximum = 20, Top = y + 25, Left = 30, Width = 100 }; this.Controls.Add(lblStep); this.Controls.Add(numStep); y += 80; Button btnClearHidden = new Button { Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", Top = y, Left = 30, Width = 280, Height = 40 }; btnClearHidden.Click += (s, e) => { config.HiddenMonitors.Clear(); MessageBox.Show("已重置，请重新扫描或重启软件。", "提示"); }; this.Controls.Add(btnClearHidden); y += 80; Button btnOk = new Button { Text = "保存设置", Top = y, Left = 110, Width = 100, Height = 40, DialogResult = DialogResult.OK, BackColor = Color.Teal, ForeColor = Color.White, FlatStyle = FlatStyle.Flat }; btnOk.Click += (s, e) => { config.ScrollStep = (int)numStep.Value; SetAutoStart(chkAuto.Checked); this.Close(); }; this.Controls.Add(btnOk); } private bool IsAutoStart() { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false)) return key?.GetValue("SimpleBrightness") != null; } private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } }
     
-    // 配置类：修复路径为 BaseDirectory (Portable)
     public class AppConfig { public int ScrollStep { get; set; } = 5; public List<string> HiddenMonitors { get; set; } = new List<string>(); public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 
-    // 修复：保存到 exe 同级目录
+    // 便携配置
     private static string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HMSimpleBrightness_Config.json"); 
     public static AppConfig Load() { if (File.Exists(ConfigPath)) try { return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath)) ?? new AppConfig(); } catch { } return new AppConfig(); } public void Save() => File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this)); public Dictionary<int, int> GetCurveForMonitor(string id) { if (Curves.ContainsKey(id)) return Curves[id]; return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } }; } }
     
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }
     
-    // 图标重绘：更精致的 iOS 风格太阳
     public static class IconDrawer { 
         public static Icon DrawSunIcon() { 
             using (Bitmap bmp = new Bitmap(32, 32)) using (Graphics g = Graphics.FromImage(bmp)) { 
                 g.SmoothingMode = SmoothingMode.AntiAlias; 
-                // 核心实心圆
                 g.FillEllipse(Brushes.Gold, 10, 10, 12, 12); 
-                // 光芒
                 Pen rayPen = new Pen(Color.Gold, 2) { StartCap = LineCap.Round, EndCap = LineCap.Round }; 
                 for (int i = 0; i < 360; i += 45) { 
                     double rad = i * Math.PI / 180; 
