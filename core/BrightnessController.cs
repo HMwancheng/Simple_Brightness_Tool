@@ -41,6 +41,8 @@ namespace SimpleBrightness.Core
                     NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2);
                 }
             } else if (monitor.Type == MonitorType.DDC) {
+                // 左键点击传入的是 true (Open) -> 期望 ON (0x01)
+                // 右键点击传入的是 false (Close) -> 期望 OFF (0x04)
                 uint code = turnOn ? 0x01u : 0x04u; 
                 NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
             }
