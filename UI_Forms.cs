@@ -6,7 +6,7 @@ using System.Drawing.Text;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using SimpleBrightness; // 引用主命名空间
+using SimpleBrightness; 
 using Microsoft.Win32;
 
 namespace SimpleBrightness
@@ -18,18 +18,18 @@ namespace SimpleBrightness
                 g.SmoothingMode = SmoothingMode.AntiAlias; 
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 Font iconFont = new Font("Segoe MDL2 Assets", 18, FontStyle.Regular);
+                // X:-7, Y:-1 (修正偏移)
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(-7, -1), Color.White);
                 return Icon.FromHandle(bmp.GetHicon()); 
             } 
         } 
     }
 
-    // ================== UnifiedOsdForm ==================
+    // ================== UnifiedOsdForm (重写: 美观对齐+无闪烁) ==================
     public class UnifiedOsdForm : Form
     {
         private System.Windows.Forms.Timer _timer;
         private List<MonitorInfo> _monitors;
-        private string _activeId = "";
 
         public UnifiedOsdForm(List<MonitorInfo> monitors)
         {
@@ -37,16 +37,16 @@ namespace SimpleBrightness
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
-            this.BackColor = Color.FromArgb(32, 32, 32); 
+            this.BackColor = Color.FromArgb(32, 32, 32); // 原生深色
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             this.Padding = new Padding(15);
             
-            int rowHeight = 50; 
-            int totalHeight = 30 + (monitors.Count * rowHeight);
-            this.Size = new Size(360, totalHeight);
+            int rowHeight = 45; 
+            int totalHeight = 20 + (monitors.Count * rowHeight);
+            this.Size = new Size(340, totalHeight);
             
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 16, 16));
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 12, 12));
             
             _timer = new System.Windows.Forms.Timer { Interval = 1500 };
             _timer.Tick += (s, e) => this.Hide();
@@ -54,16 +54,15 @@ namespace SimpleBrightness
 
         protected override bool ShowWithoutActivation => true;
 
-        public void UpdateDisplay(string activeId)
+        public void UpdateDisplay()
         {
-            _activeId = activeId;
             var screen = Screen.FromPoint(Cursor.Position);
             this.Location = new Point(
                 screen.Bounds.X + (screen.Bounds.Width - Width) / 2, 
                 screen.Bounds.Bottom - this.Height - 120
             );
             
-            this.Show();
+            if (!this.Visible) this.Show();
             this.Refresh();
             _timer.Stop();
             _timer.Start();
@@ -75,33 +74,42 @@ namespace SimpleBrightness
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
+            // 绘制边框
             using (var borderPen = new Pen(Color.FromArgb(60, 60, 60), 1)) {
                 e.Graphics.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
             }
 
             int y = 15;
+            
+            // 垂直居中辅助器
+            StringFormat centerFmt = new StringFormat { LineAlignment = StringAlignment.Center };
+
             foreach (var m in _monitors)
             {
-                // 统一配色，不再区分，防止闪烁
-                Color barColor = Color.DeepSkyBlue; 
-                Color fontColor = Color.White;
-
-                string name = m.Name.Length > 15 ? m.Name.Substring(0, 15) + "..." : m.Name;
-                TextRenderer.DrawText(e.Graphics, name, new Font("Segoe UI", 10), new Point(20, y + 10), fontColor);
+                // 1. 名字 (左对齐)
+                string name = m.Name.Length > 12 ? m.Name.Substring(0, 12) + ".." : m.Name;
+                Rectangle nameRect = new Rectangle(15, y, 100, 20);
+                e.Graphics.DrawString(name, new Font("Segoe UI", 10), Brushes.White, nameRect, centerFmt);
                 
-                int barX = 150;
-                int barY = y + 18;
-                int barW = 140;
-                int barH = 4;
+                // 2. 进度条 (中间)
+                int barX = 120;
+                int barY = y + 8; // 垂直居中调整
+                int barW = 150;
+                int barH = 6;     // 稍微加粗一点点，6px看起来更现代
+                
+                // 背景槽
                 FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(60, 60, 60)), barX, barY, barW, barH, 2);
 
+                // 前景条 (系统蓝)
                 int w = (int)(barW * (m.LastBrightness / 100.0));
-                if (w < 4) w = 4;
-                FillRoundedRectangle(e.Graphics, new SolidBrush(barColor), barX, barY, w, barH, 2);
+                if (w < 6) w = 6; 
+                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(0, 120, 212)), barX, barY, w, barH, 2);
 
-                TextRenderer.DrawText(e.Graphics, $"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), new Point(300, y + 10), fontColor);
+                // 3. 数值 (右对齐)
+                Rectangle valRect = new Rectangle(280, y, 40, 20);
+                e.Graphics.DrawString($"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), Brushes.White, valRect, centerFmt);
 
-                y += 50;
+                y += 45;
             }
         }
         
@@ -226,9 +234,7 @@ namespace SimpleBrightness
                     btnRow.Controls.Add(btnCurve); 
                     Button btnPower = CreateModernButton("⏻ 电源", 90); 
                     btnPower.ForeColor = Color.LightGreen; 
-                    // 修复：左键=ON (True), 右键=OFF (False)
-                    // SetPowerState(MonitorInfo monitor, bool turnOn, bool useSoftwareMode)
-                    // MouseButtons.Left -> True (On)
+                    // 左键=ON, 右键=OFF
                     btnPower.MouseDown += (s, e) => { Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.UseSoftwarePower)); }; 
                     ToolTip tip = new ToolTip(); tip.SetToolTip(btnPower, "左键：开启 (On)\n右键：关闭 (Off)");
                     btnRow.Controls.Add(btnPower); 
