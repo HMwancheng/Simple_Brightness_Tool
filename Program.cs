@@ -2,7 +2,6 @@ using Microsoft.Win32;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Management;
@@ -12,9 +11,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-
-// 引用 UI 定义
-using SimpleBrightness; 
 
 namespace SimpleBrightness
 {
@@ -27,7 +23,7 @@ namespace SimpleBrightness
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v39_Split"))
+            using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v40_Split_Fixed"))
             {
                 if (!mutex.WaitOne(0, false)) return;
                 ApplicationConfiguration.Initialize();
@@ -43,7 +39,7 @@ namespace SimpleBrightness
         private List<MonitorInfo> monitors = new List<MonitorInfo>();
         private AppConfig config;
         private MouseHook mouseHook;
-        private UnifiedOsdForm? _unifiedOsd;
+        private UnifiedOsdForm? _unifiedOsd; // 引用 UI_Forms.cs 中的类
         private DateTime _lastIconHoverTime = DateTime.MinValue;
         private bool _isDebugMode = false;
 
@@ -102,7 +98,8 @@ namespace SimpleBrightness
         {
             if (monitors.Count == 0) return;
             int targetVal = monitors[0].LastBrightness;
-            foreach (var m in monitors) {
+            foreach (var m in monitors)
+            {
                 if (config.HiddenMonitors.Contains(m.UniqueId)) continue;
                 m.LastBrightness = targetVal;
                 ApplyBrightness(m, targetVal, true);
@@ -168,7 +165,6 @@ namespace SimpleBrightness
                         var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
                         foreach (ManagementObject obj in searcher.Get()) {
                             var val = obj["CurrentBrightness"];
-                            // 修复：空值检查，解决 System.NullReferenceException
                             if (val != null && int.TryParse(val.ToString(), out int pVal)) 
                                 realVal = pVal;
                         }
@@ -188,7 +184,6 @@ namespace SimpleBrightness
         private void OnGlobalMouseWheel(object? sender, MouseEventArgs e)
         {
             if (!IsMouseOverTrayArea()) return;
-            // 0.75秒保活
             if ((DateTime.Now - _lastIconHoverTime).TotalSeconds < 0.75)
             {
                 _lastIconHoverTime = DateTime.Now; 
@@ -231,7 +226,6 @@ namespace SimpleBrightness
                 BrightnessController.SetBrightnessDebounced(m, finalVal, config.DebounceTime);
             }
             
-            // 逻辑优化：如果控制中心开着，只更新控制中心，不弹 OSD
             var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
             bool isMainWinVisible = (form != null && !form.IsDisposed && form.Visible);
 
@@ -320,6 +314,7 @@ namespace SimpleBrightness
     public static class BrightnessController 
     {
         private static ConcurrentDictionary<string, CancellationTokenSource> _debounceTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
+
         public static void SetBrightnessDebounced(MonitorInfo monitor, int level, int debounceMs) {
             if (_debounceTokens.TryGetValue(monitor.UniqueId, out CancellationTokenSource? oldCts)) { oldCts.Cancel(); oldCts.Dispose(); }
             var cts = new CancellationTokenSource(); _debounceTokens[monitor.UniqueId] = cts;
@@ -327,6 +322,7 @@ namespace SimpleBrightness
                 try { await Task.Delay(debounceMs, cts.Token); SetBrightnessImmediate(monitor, level); } catch (TaskCanceledException) { }
             });
         }
+
         public static void SetBrightnessImmediate(MonitorInfo monitor, int level) {
             if (monitor.Type == MonitorType.WMI) { 
                 try { 
@@ -337,16 +333,22 @@ namespace SimpleBrightness
                 NativeMethods.SetVCPFeature(monitor.Handle, 0x10, (uint)level); 
             } 
         }
+
         public static void SetPowerState(MonitorInfo monitor, bool turnOn, bool useSoftwareMode) { 
             if (useSoftwareMode) {
                 if (turnOn) {
-                    NativeMethods.mouse_event(0x0001, 0, 1, 0, UIntPtr.Zero); Thread.Sleep(10); NativeMethods.mouse_event(0x0001, 0, -1, 0, UIntPtr.Zero);
-                } else { NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2); }
+                    NativeMethods.mouse_event(0x0001, 0, 1, 0, UIntPtr.Zero);
+                    Thread.Sleep(10);
+                    NativeMethods.mouse_event(0x0001, 0, -1, 0, UIntPtr.Zero);
+                } else {
+                    NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2);
+                }
             } else if (monitor.Type == MonitorType.DDC) {
-                uint code = turnOn ? 0x01u : 0x04u; // 左键开，右键关
+                uint code = turnOn ? 0x01u : 0x04u; 
                 NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
             }
         } 
+
         public static int GetVCPBrightness(IntPtr hMonitor) { 
             uint current = 50, max = 100; 
             if (NativeMethods.GetVCPFeatureAndVCPFeatureReply(hMonitor, 0x10, IntPtr.Zero, ref current, ref max)) return (int)current; 
@@ -371,5 +373,20 @@ namespace SimpleBrightness
     public enum MonitorType { WMI, DDC }
 
     public class MouseHook { private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam); private LowLevelMouseProc _proc; private IntPtr _hookID = IntPtr.Zero; public event MouseEventHandler? MouseWheel; public MouseHook() { _proc = HookCallback; } public void Install() { _hookID = SetWindowsHookEx(14, _proc, GetModuleHandle(System.Diagnostics.Process.GetCurrentProcess().MainModule?.ModuleName ?? "user32"), 0); } public void Uninstall() { UnhookWindowsHookEx(_hookID); } private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) { if (nCode >= 0 && (int)wParam == 0x020A) { MSLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam); short delta = (short)((hookStruct.mouseData >> 16) & 0xffff); MouseWheel?.Invoke(this, new MouseEventArgs(MouseButtons.None, 0, hookStruct.pt.x, hookStruct.pt.y, delta)); } return CallNextHookEx(_hookID, nCode, wParam, lParam); } [StructLayout(LayoutKind.Sequential)] private struct POINT { public int x; public int y; } [StructLayout(LayoutKind.Sequential)] private struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public IntPtr dwExtraInfo; } [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId); [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool UnhookWindowsHookEx(IntPtr hhk); [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam); [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr GetModuleHandle(string lpModuleName); }
-    internal static class NativeMethods { [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, IntPtr dwData); public delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData); [DllImport("dxva2.dll")] public static extern bool GetNumberOfPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, ref int pdwNumberOfPhysicalMonitors); [DllImport("dxva2.dll", EntryPoint = "GetPhysicalMonitorsFromHMONITOR")] public static extern bool GetPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, int dwPhysicalMonitorArraySize, [Out] PHYSICAL_MONITOR[] pPhysicalMonitorArray); [DllImport("dxva2.dll")] public static extern bool SetVCPFeature(IntPtr hMonitor, byte bVCPCode, uint dwNewValue); [DllImport("dxva2.dll")] public static extern bool GetVCPFeatureAndVCPFeatureReply(IntPtr hMonitor, byte bVCPCode, IntPtr pvct, ref uint pdwCurrentValue, ref uint pdwMaximumValue); [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse); [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p); [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount); [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Auto)] public static extern IntPtr GetParent(IntPtr hWnd); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam); [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left; public int top; public int right; public int bottom; } [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } }
+
+    internal static class NativeMethods { 
+        [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, IntPtr dwData); public delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData); 
+        [DllImport("dxva2.dll")] public static extern bool GetNumberOfPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, ref int pdwNumberOfPhysicalMonitors); 
+        [DllImport("dxva2.dll", EntryPoint = "GetPhysicalMonitorsFromHMONITOR")] public static extern bool GetPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, int dwPhysicalMonitorArraySize, [Out] PHYSICAL_MONITOR[] pPhysicalMonitorArray); 
+        [DllImport("dxva2.dll")] public static extern bool SetVCPFeature(IntPtr hMonitor, byte bVCPCode, uint dwNewValue); 
+        [DllImport("dxva2.dll")] public static extern bool GetVCPFeatureAndVCPFeatureReply(IntPtr hMonitor, byte bVCPCode, IntPtr pvct, ref uint pdwCurrentValue, ref uint pdwMaximumValue); 
+        [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse); 
+        [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p); 
+        [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount); 
+        [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Auto)] public static extern IntPtr GetParent(IntPtr hWnd); 
+        [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); 
+        [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam); 
+        [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left; public int top; public int right; public int bottom; } 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } 
+    }
 }
