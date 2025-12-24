@@ -3,7 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
-using System.Management; // <--- 关键修复：添加这行
+using System.Management;
+using System.Runtime.InteropServices;
+using System.Text; // <--- 关键修复：添加这行以支持 StringBuilder
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SimpleBrightness.Model;
@@ -31,7 +33,7 @@ namespace SimpleBrightness.Core
 
             RefreshMonitors();
             RestoreOrReadBrightness();
-
+            
             Application.ApplicationExit += (s, e) => { UnregisterSystemEvents(); SaveAllSettings(); };
             RegisterSystemEvents();
 
@@ -39,37 +41,35 @@ namespace SimpleBrightness.Core
             contextMenu.Items.Add("关于 & 说明", null, (s, e) => new HelpForm().ShowDialog());
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
-
-            var debugItem = new ToolStripMenuItem("🛠 调试模式 (忽略曲线)", null, (s, e) =>
-            {
+            
+            var debugItem = new ToolStripMenuItem("🛠 调试模式 (忽略曲线)", null, (s, e) => {
                 _isDebugMode = !_isDebugMode;
                 ((ToolStripMenuItem)s).Checked = _isDebugMode;
             });
             contextMenu.Items.Add(debugItem);
-
+            
             contextMenu.Items.Add("重新扫描", null, (s, e) => { ReloadMonitorsSafe(); });
             contextMenu.Items.Add(new ToolStripSeparator());
-            contextMenu.Items.Add("退出", null, (s, e) =>
-            {
+            contextMenu.Items.Add("退出", null, (s, e) => {
                 SaveAllSettings();
                 mouseHook?.Uninstall();
                 trayIcon.Visible = false;
-                Application.Exit();
+                Application.Exit(); 
             });
 
             trayIcon = new NotifyIcon()
             {
-                Icon = IconDrawer.DrawSunIcon(),
+                // 确保这里调用的是 DrawSunIcon
+                Icon = IconDrawer.DrawSunIcon(), 
                 ContextMenuStrip = contextMenu,
                 Visible = true,
                 Text = "HM's Simple Brightness Tool"
             };
 
             trayIcon.MouseMove += (s, e) => _lastIconHoverTime = DateTime.Now;
-
-            trayIcon.MouseClick += (s, e) =>
-            {
-                if (e.Button == MouseButtons.Left) ShowBrightnessWindow();
+            
+            trayIcon.MouseClick += (s, e) => { 
+                if (e.Button == MouseButtons.Left) ShowBrightnessWindow(); 
                 else if (e.Button == MouseButtons.Middle) SyncAllBrightness();
             };
 
@@ -90,44 +90,36 @@ namespace SimpleBrightness.Core
             }
         }
 
-        private void RegisterSystemEvents()
-        {
+        private void RegisterSystemEvents() {
             SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
             SystemEvents.SessionSwitch += SystemEvents_SessionSwitch;
             SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
         }
-        private void UnregisterSystemEvents()
-        {
+        private void UnregisterSystemEvents() {
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
             SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
         }
-        private async void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)
-        {
+        private async void SystemEvents_PowerModeChanged(object? sender, PowerModeChangedEventArgs e) {
             if (e.Mode == PowerModes.Resume) { await Task.Delay(2000); ReloadMonitorsSafe(); }
         }
-        private async void SystemEvents_SessionSwitch(object sender, SessionSwitchEventArgs e)
-        {
+        private async void SystemEvents_SessionSwitch(object? sender, SessionSwitchEventArgs e) {
             if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect) { await Task.Delay(2000); ReloadMonitorsSafe(); }
         }
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
 
-        private void ReloadMonitorsSafe()
-        {
-            if (brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible)
-            {
+        private void ReloadMonitorsSafe() {
+            if (brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible) {
                 brightnessWindow.Invoke(new Action(() => brightnessWindow.Close()));
                 brightnessWindow = null;
             }
-            if (_unifiedOsd != null && !_unifiedOsd.IsDisposed)
-            {
+            if (_unifiedOsd != null && !_unifiedOsd.IsDisposed) {
                 _unifiedOsd.Invoke(new Action(() => _unifiedOsd.Close()));
                 _unifiedOsd = null;
             }
-            foreach (var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
+            foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             RefreshMonitors();
-            foreach (var m in monitors)
-            {
+            foreach(var m in monitors) {
                 if (config.SavedBrightness.ContainsKey(m.UniqueId)) m.LastBrightness = config.SavedBrightness[m.UniqueId];
             }
             Task.Run(() => ReadRealBrightness());
@@ -136,14 +128,10 @@ namespace SimpleBrightness.Core
         private void RestoreOrReadBrightness()
         {
             bool needReadHardware = false;
-            foreach (var m in monitors)
-            {
-                if (config.SavedBrightness.ContainsKey(m.UniqueId))
-                {
+            foreach (var m in monitors) {
+                if (config.SavedBrightness.ContainsKey(m.UniqueId)) {
                     m.LastBrightness = config.SavedBrightness[m.UniqueId];
-                }
-                else
-                {
+                } else {
                     needReadHardware = true;
                 }
             }
@@ -152,34 +140,26 @@ namespace SimpleBrightness.Core
 
         private void SaveAllSettings()
         {
-            foreach (var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
+            foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             config.Save();
         }
 
         private void ReadRealBrightness()
         {
-            foreach (var m in monitors)
-            {
+            foreach (var m in monitors) {
                 int realVal = -1;
-                if (m.Type == MonitorType.WMI)
-                {
-                    try
-                    {
+                if (m.Type == MonitorType.WMI) {
+                    try {
                         var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
-                        foreach (ManagementObject obj in searcher.Get())
-                        {
+                        foreach (ManagementObject obj in searcher.Get()) {
                             var val = obj["CurrentBrightness"];
                             if (val != null) realVal = int.Parse(val.ToString() ?? "50");
                         }
-                    }
-                    catch { }
+                    } catch { }
+                } else if (m.Type == MonitorType.DDC) {
+                     realVal = BrightnessController.GetVCPBrightness(m.Handle);
                 }
-                else if (m.Type == MonitorType.DDC)
-                {
-                    realVal = BrightnessController.GetVCPBrightness(m.Handle);
-                }
-                if (realVal != -1)
-                {
+                if (realVal != -1) {
                     m.LastBrightness = realVal;
                     if (brightnessWindow != null && brightnessWindow.Visible)
                         brightnessWindow.Invoke(new Action(() => brightnessWindow.UpdateSlider(m.UniqueId, realVal)));
@@ -189,17 +169,17 @@ namespace SimpleBrightness.Core
 
         private void OnGlobalMouseWheel(object? sender, MouseEventArgs e)
         {
-            bool isOverTray = IsMouseOverTrayArea();
-            bool isActive = (DateTime.Now - _lastIconHoverTime).TotalSeconds < 1.0;
+            if (!IsMouseOverTrayArea()) return;
 
-            if (isOverTray && isActive)
+            // 超时检测 0.75s
+            if ((DateTime.Now - _lastIconHoverTime).TotalSeconds < 0.75)
             {
-                _lastIconHoverTime = DateTime.Now;
+                _lastIconHoverTime = DateTime.Now; 
                 int change = e.Delta > 0 ? config.ScrollStep : -config.ScrollStep;
                 foreach (var m in monitors.Where(x => !config.HiddenMonitors.Contains(x.UniqueId)))
                 {
                     int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
-                    ApplyBrightness(m, newVal, true);
+                    ApplyBrightness(m, newVal, true); 
                 }
             }
         }
@@ -208,8 +188,7 @@ namespace SimpleBrightness.Core
         {
             IntPtr hWnd = NativeMethods.WindowFromPoint(Cursor.Position);
             if (hWnd == IntPtr.Zero) return false;
-            for (int i = 0; i < 6; i++)
-            {
+            for (int i = 0; i < 6; i++) {
                 StringBuilder sb = new StringBuilder(256);
                 NativeMethods.GetClassName(hWnd, sb, 256);
                 string cls = sb.ToString();
@@ -224,121 +203,58 @@ namespace SimpleBrightness.Core
         {
             m.LastBrightness = val;
             int finalVal = val;
-            if (!_isDebugMode && m.Type == MonitorType.DDC)
-            {
+            if (!_isDebugMode && m.Type == MonitorType.DDC) {
                 var curve = config.GetCurveForMonitor(m.UniqueId);
                 finalVal = Interpolate(val, curve);
             }
-
-            if (m.Type == MonitorType.WMI)
-            {
+            
+            if (m.Type == MonitorType.WMI) {
                 Task.Run(() => BrightnessController.SetBrightnessImmediate(m, finalVal));
-            }
-            else
-            {
+            } else {
                 BrightnessController.SetBrightnessDebounced(m, finalVal, config.DebounceTime);
             }
-
-            // 无论主窗口是否显示，都更新 OSD（如果没被禁用）
-            bool isMainWinVisible = (brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible);
-
-            if (isMainWinVisible)
-            {
-                if (updateUi) brightnessWindow.Invoke(new Action(() => brightnessWindow.UpdateSlider(m.UniqueId, val)));
-            }
-            else
-            {
-                ShowUnifiedOsd(m.UniqueId);
+            
+            ShowUnifiedOsd();
+            
+            if (updateUi && brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible) {
+                brightnessWindow.Invoke(new Action(() => brightnessWindow.UpdateSlider(m.UniqueId, val)));
             }
         }
 
-        private void ShowUnifiedOsd(string activeId)
+        private void ShowUnifiedOsd()
         {
-            if (_unifiedOsd == null || _unifiedOsd.IsDisposed)
-            {
+            if (_unifiedOsd == null || _unifiedOsd.IsDisposed) {
                 var visibleMonitors = monitors.Where(x => !config.HiddenMonitors.Contains(x.UniqueId)).ToList();
                 if (visibleMonitors.Count == 0) return;
                 _unifiedOsd = new UnifiedOsdForm(visibleMonitors);
             }
-
-            if (_unifiedOsd.InvokeRequired)
+            
+            if (_unifiedOsd.InvokeRequired) 
                 _unifiedOsd.Invoke(new Action(() => _unifiedOsd.UpdateDisplay()));
-            else
+            else 
                 _unifiedOsd.UpdateDisplay();
         }
 
-        private int Interpolate(int input, Dictionary<int, int> points)
-        {
+        private int Interpolate(int input, Dictionary<int, int> points) {
             var sorted = points.OrderBy(k => k.Key).ToList();
             if (input <= sorted.First().Key) return sorted.First().Value;
             if (input >= sorted.Last().Key) return sorted.Last().Value;
-            for (int i = 0; i < sorted.Count - 1; i++)
-            {
-                if (input >= sorted[i].Key && input <= sorted[i+1].Key)
-                {
+            for (int i = 0; i < sorted.Count - 1; i++) {
+                if (input >= sorted[i].Key && input <= sorted[i+1].Key) {
                     return sorted[i].Value + (input - sorted[i].Key) * (sorted[i+1].Value - sorted[i].Value) / (sorted[i+1].Key - sorted[i].Key);
                 }
             }
             return input;
         }
 
-        private void ShowBrightnessWindow()
-        {
+        private void ShowBrightnessWindow() {
             if (brightnessWindow == null || brightnessWindow.IsDisposed)
                 brightnessWindow = new BrightnessForm(monitors, config, this, contextMenu);
-
             brightnessWindow.Show();
             brightnessWindow.Activate();
-            foreach (var m in monitors) brightnessWindow.UpdateSlider(m.UniqueId, m.LastBrightness);
+            foreach(var m in monitors) brightnessWindow.UpdateSlider(m.UniqueId, m.LastBrightness);
         }
 
         private void ShowSettings() { var form = new SettingsForm(config); form.Show(); }
-
-        public void RefreshMonitors()
-        {
-            monitors.Clear();
-            try
-            {
-                ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
-                foreach (ManagementObject queryObj in searcher.Get())
-                {
-                    string id = queryObj["InstanceName"]?.ToString() ?? "UnknownWmi";
-                    if (!monitors.Any(m => m.InstanceId == id))
-                    {
-                        string uniqueId = "WMI_" + GetStableHash(id);
-                        string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : "内置屏幕";
-                        monitors.Add(new MonitorInfo { Type = MonitorType.WMI, Name = name, InstanceId = id, UniqueId = uniqueId });
-                    }
-                }
-            }
-            catch { }
-            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData)
-            {
-                int count = 0;
-                NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
-                if (count > 0)
-                {
-                    var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
-                    if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs))
-                    {
-                        for (int i = 0; i < pMs.Length; i++)
-                        {
-                            string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
-                            string uniqueId = "DDC_" + GetStableHash(originalName) + "_IDX_" + i;
-                            string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : originalName;
-                            monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
-                        }
-                    }
-                }
-                return true;
-            }, IntPtr.Zero);
-        }
-
-        private static string GetStableHash(string str)
-        {
-            ulong hash = 5381;
-            foreach (char c in str) hash = ((hash << 5) + hash) + c;
-            return hash.ToString();
-        }
     }
 }
