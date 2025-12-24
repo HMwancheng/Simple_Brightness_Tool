@@ -1,4 +1,3 @@
-
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -28,6 +27,8 @@ namespace SimpleBrightness.UI
             int rowHeight = 50;
             int totalHeight = 30 + (monitors.Count * rowHeight);
             this.Size = new Size(360, totalHeight);
+            
+            // 需要引用 Utils.NativeMethods
             this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 16, 16));
 
             _timer = new System.Windows.Forms.Timer { Interval = 1500 };
@@ -64,10 +65,9 @@ namespace SimpleBrightness.UI
             int y = 15;
             foreach (var m in _monitors)
             {
-                // 统一配色，不再区分高亮，解决闪烁问题
+                // 统一配色，不再区分 Active，防止闪烁
                 Color barColor = Color.DeepSkyBlue;
                 Color fontColor = Color.White;
-                Color bgColor = Color.FromArgb(60, 60, 60);
 
                 // 1. 名字
                 string name = m.Name.Length > 15 ? m.Name.Substring(0, 15) + "..." : m.Name;
@@ -78,14 +78,14 @@ namespace SimpleBrightness.UI
                 int barY = y + 18;
                 int barW = 140;
                 int barH = 4;
-                FillRoundedRectangle(e.Graphics, new SolidBrush(bgColor), barX, barY, barW, barH, 2);
+                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(60, 60, 60)), barX, barY, barW, barH, 2);
 
                 // 3. 进度条前景
                 int w = (int)(barW * (m.LastBrightness / 100.0));
                 if (w < 4) w = 4;
                 FillRoundedRectangle(e.Graphics, new SolidBrush(barColor), barX, barY, w, barH, 2);
 
-                // 4. 数值 (右侧对齐)
+                // 4. 数值
                 TextRenderer.DrawText(e.Graphics, $"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), new Point(300, y + 10), fontColor);
 
                 y += 50;
