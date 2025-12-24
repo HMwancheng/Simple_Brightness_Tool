@@ -6,26 +6,25 @@ using System.Drawing.Text;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using SimpleBrightness; // 引用主命名空间
+using SimpleBrightness;
 using Microsoft.Win32;
 
 namespace SimpleBrightness
 {
-    // ================== 图标绘制 ==================
+    // ================== Icon ==================
     public static class IconDrawer { 
         public static Icon DrawNativeIcon() { 
             using (Bitmap bmp = new Bitmap(32, 32)) using (Graphics g = Graphics.FromImage(bmp)) { 
                 g.SmoothingMode = SmoothingMode.AntiAlias; 
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 Font iconFont = new Font("Segoe MDL2 Assets", 18, FontStyle.Regular);
-                // 偏移量：X:-7, Y:-1 (确保居中)
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(-7, -1), Color.White);
                 return Icon.FromHandle(bmp.GetHicon()); 
             } 
         } 
     }
 
-    // ================== 核心：统一 OSD 窗口 ==================
+    // ================== Unified OSD (Remastered) ==================
     public class UnifiedOsdForm : Form
     {
         private System.Windows.Forms.Timer _timer;
@@ -37,17 +36,17 @@ namespace SimpleBrightness
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
-            this.BackColor = Color.FromArgb(32, 32, 32); // 原生深色背景
+            this.BackColor = Color.FromArgb(32, 32, 32); 
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             this.Padding = new Padding(15);
             
-            // 自动计算高度: 上下边距30 + 每个条目50
-            int rowHeight = 50; 
+            // 自动高度
+            int rowHeight = 45; 
             int totalHeight = 30 + (monitors.Count * rowHeight);
-            this.Size = new Size(360, totalHeight);
+            this.Size = new Size(340, totalHeight);
             
-            // 窗口圆角
+            // 圆角
             this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 16, 16));
             
             _timer = new System.Windows.Forms.Timer { Interval = 1500 };
@@ -58,7 +57,6 @@ namespace SimpleBrightness
 
         public void UpdateDisplay()
         {
-            // 始终显示在鼠标所在屏幕底部
             var screen = Screen.FromPoint(Cursor.Position);
             this.Location = new Point(
                 screen.Bounds.X + (screen.Bounds.Width - Width) / 2, 
@@ -66,7 +64,7 @@ namespace SimpleBrightness
             );
             
             if (!this.Visible) this.Show();
-            this.Refresh(); // 强制重绘
+            this.Refresh();
             _timer.Stop();
             _timer.Start();
         }
@@ -77,47 +75,39 @@ namespace SimpleBrightness
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            // 绘制微弱边框
             using (var borderPen = new Pen(Color.FromArgb(60, 60, 60), 1)) {
                 e.Graphics.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
             }
 
             int y = 15;
-            
             // 垂直居中格式
-            StringFormat centerFmt = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
-            StringFormat rightFmt = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Far };
+            StringFormat centerLeft = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
+            StringFormat centerRight = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Far };
 
             foreach (var m in _monitors)
             {
-                // 统一配色，不再高亮，防止闪烁
-                Color barColor = Color.DeepSkyBlue; 
-                Color fontColor = Color.White;
-
-                // 1. 名字 (左侧)
-                string name = m.Name.Length > 15 ? m.Name.Substring(0, 15) + "..." : m.Name;
+                // 1. 名字 (左侧, 粗体, 白色)
+                string name = m.Name.Length > 12 ? m.Name.Substring(0, 12) + "..." : m.Name;
                 Rectangle nameRect = new Rectangle(20, y, 110, 30);
-                e.Graphics.DrawString(name, new Font("Segoe UI", 10), new SolidBrush(fontColor), nameRect, centerFmt);
+                e.Graphics.DrawString(name, new Font("Segoe UI", 10, FontStyle.Bold), Brushes.White, nameRect, centerLeft);
                 
                 // 2. 进度条 (中间)
                 int barX = 140;
-                int barY = y + 13; // 垂直位置微调
+                int barY = y + 12; // 垂直调整
                 int barW = 140;
-                int barH = 4; // 细条风格
+                int barH = 6;     // 圆角条
                 
-                // 背景槽
-                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(60, 60, 60)), barX, barY, barW, barH, 2);
+                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(60, 60, 60)), barX, barY, barW, barH, 3);
 
-                // 前景条
                 int w = (int)(barW * (m.LastBrightness / 100.0));
-                if (w < 4) w = 4; 
-                FillRoundedRectangle(e.Graphics, new SolidBrush(barColor), barX, barY, w, barH, 2);
+                if (w < 6) w = 6;
+                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(0, 120, 212)), barX, barY, w, barH, 3); // 系统蓝
 
-                // 3. 数值 (右侧)
-                Rectangle valRect = new Rectangle(290, y, 50, 30);
-                e.Graphics.DrawString($"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), new SolidBrush(fontColor), valRect, rightFmt);
+                // 3. 数值 (右侧, 青色)
+                Rectangle valRect = new Rectangle(290, y, 40, 30);
+                e.Graphics.DrawString($"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), Brushes.Cyan, valRect, centerRight);
 
-                y += 50; // 行高
+                y += 45;
             }
         }
         
@@ -136,10 +126,6 @@ namespace SimpleBrightness
         }
     }
 
-    // 占位符，防止 Program.cs 报错
-    public class OsdForm : Form { public OsdForm(string n){} public void UpdateName(string n){} public void ShowOSD(int v, bool d, int r, int x, int y){} }
-
-    // ================== HelpForm ==================
     public class HelpForm : Form {
         public HelpForm() {
             this.Text = "关于 & 说明"; this.Size = new Size(520, 480); this.StartPosition = FormStartPosition.CenterScreen;
@@ -177,7 +163,6 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== SettingsForm ==================
     public class SettingsForm : Form { 
         public SettingsForm(AppConfig config) { 
             this.Text = "设置"; this.Size = new Size(350, 480); 
@@ -221,7 +206,6 @@ namespace SimpleBrightness
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } 
     }
 
-    // ================== BrightnessForm (主窗口) ==================
     public class BrightnessForm : Form
     {
         private List<MonitorInfo> _monitors; private AppConfig _config; private MyCustomApplicationContext _context; private Dictionary<string, TrackBar> _sliders = new Dictionary<string, TrackBar>(); private Dictionary<string, Label> _valLabels = new Dictionary<string, Label>(); private FlowLayoutPanel _mainPanel;
@@ -242,7 +226,6 @@ namespace SimpleBrightness
                     btnRow.Controls.Add(btnCurve); 
                     Button btnPower = CreateModernButton("⏻ 电源", 90); 
                     btnPower.ForeColor = Color.LightGreen; 
-                    // 修复：电源按钮逻辑 (左=ON, 右=OFF)
                     btnPower.MouseDown += (s, e) => { Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.UseSoftwarePower)); }; 
                     ToolTip tip = new ToolTip(); tip.SetToolTip(btnPower, "左键：开启 (On)\n右键：关闭 (Off)");
                     btnRow.Controls.Add(btnPower); 
@@ -257,7 +240,6 @@ namespace SimpleBrightness
         public void UpdateSlider(string id, int val) { if (_sliders.ContainsKey(id)) { _sliders[id].Value = val; _valLabels[id].Text = val + "%"; } }
     }
 
-    // ================== CurveEditorForm ==================
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; private AppConfig _config; private Dictionary<int, int> _currentPoints; private FlowLayoutPanel _panel;
@@ -302,6 +284,8 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== InputBox ==================
     public class InputBox : Form { public string ResultText { get; private set; } = ""; public InputBox(string title, string prompt, string defaultText) { this.Size = new Size(300, 180); this.Text = title; this.StartPosition = FormStartPosition.CenterScreen; this.FormBorderStyle = FormBorderStyle.FixedDialog; Label l = new Label { Text = prompt, Top = 20, Left = 20, AutoSize = true }; TextBox t = new TextBox { Text = defaultText, Top = 50, Left = 20, Width = 240 }; Button b = new Button { Text = "确定", Top = 90, Left = 180, DialogResult = DialogResult.OK }; b.Click += (s, e) => { ResultText = t.Text; this.Close(); }; this.Controls.AddRange(new Control[] { l, t, b }); this.AcceptButton = b; } }
+    
+    // OsdForm (Unified Placeholder for old ref, actual logic is in UnifiedOsdForm above)
+    public class OsdForm : Form { public OsdForm(string n){} public void UpdateName(string n){} public void ShowOSD(int v, bool d, int r, int x, int y){} }
 }
