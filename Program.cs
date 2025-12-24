@@ -26,7 +26,8 @@ namespace SimpleBrightness
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v36_Stable"))
+            // 互斥体防止多开
+            using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v36_Unified_Final"))
             {
                 if (!mutex.WaitOne(0, false)) return;
                 ApplicationConfiguration.Initialize();
@@ -44,7 +45,7 @@ namespace SimpleBrightness
         private List<MonitorInfo> monitors = new List<MonitorInfo>();
         private AppConfig config;
         private MouseHook mouseHook;
-        // 单例 OSD
+        // 使用统一 OSD
         private UnifiedOsdForm? _unifiedOsd;
         private DateTime _lastIconHoverTime = DateTime.MinValue;
         private bool _isDebugMode = false;
@@ -131,18 +132,14 @@ namespace SimpleBrightness
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
 
         private void ReloadMonitorsSafe() {
-            // 1. 关闭主窗口
             if (brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible) {
                 brightnessWindow.Invoke(new Action(() => brightnessWindow.Close()));
                 brightnessWindow = null;
             }
-            // 2. 修复：销毁 OSD 窗口，防止持有旧 MonitorInfo 引用导致数值不更新
             if (_unifiedOsd != null && !_unifiedOsd.IsDisposed) {
                 _unifiedOsd.Invoke(new Action(() => _unifiedOsd.Close()));
                 _unifiedOsd = null;
             }
-
-            // 3. 保存并重载
             foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             RefreshMonitors();
             foreach(var m in monitors) {
@@ -240,7 +237,7 @@ namespace SimpleBrightness
                 BrightnessController.SetBrightnessDebounced(m, finalVal, config.DebounceTime);
             }
             
-            // 逻辑优化：如果控制中心开着，只更新控制中心，不弹 OSD，防止打架
+            // 逻辑优化：如果控制中心开着，只更新控制中心，不弹 OSD
             bool isMainWinVisible = (brightnessWindow != null && !brightnessWindow.IsDisposed && brightnessWindow.Visible);
 
             if (isMainWinVisible) {
@@ -250,6 +247,7 @@ namespace SimpleBrightness
             }
         }
 
+        // ================== 统一 OSD 调用 ==================
         private void ShowUnifiedOsd(string activeId)
         {
             if (_unifiedOsd == null || _unifiedOsd.IsDisposed) {
@@ -279,50 +277,13 @@ namespace SimpleBrightness
         private void ShowBrightnessWindow() {
             if (brightnessWindow == null || brightnessWindow.IsDisposed)
                 brightnessWindow = new BrightnessForm(monitors, config, this, contextMenu);
+            
             brightnessWindow.Show();
             brightnessWindow.Activate();
             foreach(var m in monitors) brightnessWindow.UpdateSlider(m.UniqueId, m.LastBrightness);
         }
 
         private void ShowSettings() { var form = new SettingsForm(config); form.Show(); }
-
-        public void RefreshMonitors()
-        {
-            monitors.Clear();
-            try {
-                ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
-                foreach (ManagementObject queryObj in searcher.Get()) {
-                    string id = queryObj["InstanceName"]?.ToString() ?? "UnknownWmi";
-                    if (!monitors.Any(m => m.InstanceId == id)) {
-                        string uniqueId = "WMI_" + GetStableHash(id);
-                        string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : "内置屏幕";
-                        monitors.Add(new MonitorInfo { Type = MonitorType.WMI, Name = name, InstanceId = id, UniqueId = uniqueId });
-                    }
-                }
-            } catch { }
-            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) {
-                int count = 0;
-                NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
-                if (count > 0) {
-                    var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
-                    if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs)) {
-                        for (int i = 0; i < pMs.Length; i++) {
-                            string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
-                            string uniqueId = "DDC_" + GetStableHash(originalName) + "_IDX_" + i;
-                            string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : originalName;
-                            monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
-                        }
-                    }
-                }
-                return true;
-            }, IntPtr.Zero);
-        }
-
-        private static string GetStableHash(string str) {
-            ulong hash = 5381;
-            foreach (char c in str) hash = ((hash << 5) + hash) + c;
-            return hash.ToString();
-        }
     }
 
     // ================== 2. 图标 (System Style) ==================
@@ -339,7 +300,7 @@ namespace SimpleBrightness
         } 
     }
 
-    // ================== 3. UnifiedOsdForm (美化版) ==================
+    // ================== 3. UnifiedOsdForm (核心重构：统一 OSD) ==================
     public class UnifiedOsdForm : Form
     {
         private System.Windows.Forms.Timer _timer;
@@ -352,16 +313,17 @@ namespace SimpleBrightness
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
-            this.BackColor = Color.FromArgb(24, 24, 24); // 稍亮一点的深色，提升质感
+            this.BackColor = Color.FromArgb(32, 32, 32); // 原生深色
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             this.Padding = new Padding(15);
             
+            // 自动计算高度：Header + Items
             int rowHeight = 50; 
             int totalHeight = 30 + (monitors.Count * rowHeight);
-            this.Size = new Size(340, totalHeight);
+            this.Size = new Size(360, totalHeight);
             
-            // 增大圆角
+            // 圆角
             this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 16, 16));
             
             _timer = new System.Windows.Forms.Timer { Interval = 1500 };
@@ -374,7 +336,12 @@ namespace SimpleBrightness
         {
             _activeId = activeId;
             var screen = Screen.FromPoint(Cursor.Position);
-            this.Location = new Point(screen.Bounds.X + (screen.Bounds.Width - Width) / 2, screen.Bounds.Bottom - this.Height - 100);
+            
+            // 始终定位在当前屏幕底部居中
+            this.Location = new Point(
+                screen.Bounds.X + (screen.Bounds.Width - Width) / 2, 
+                screen.Bounds.Bottom - this.Height - 120
+            );
             
             this.Show();
             this.Refresh();
@@ -388,40 +355,37 @@ namespace SimpleBrightness
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            // 绘制边框
-            using (var p = new Pen(Color.FromArgb(45, 45, 45), 1)) {
-                e.Graphics.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
+            // 绘制微弱的边框
+            using (var borderPen = new Pen(Color.FromArgb(60, 60, 60), 1)) {
+                e.Graphics.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
             }
 
             int y = 15;
             foreach (var m in _monitors)
             {
+                // 高亮逻辑
                 bool isActive = (m.UniqueId == _activeId);
-                Color barColor = isActive ? Color.DeepSkyBlue : Color.Gray; // 颜色优化
+                Color barColor = isActive ? Color.DeepSkyBlue : Color.Gray; 
                 Color fontColor = isActive ? Color.White : Color.DarkGray;
 
-                // 1. 名字
-                string name = m.Name.Length > 12 ? m.Name.Substring(0, 12) + ".." : m.Name;
-                Size nameSize = TextRenderer.MeasureText(name, new Font("Segoe UI", 10));
-                Point namePos = new Point(20, y + 10);
-                TextRenderer.DrawText(e.Graphics, name, new Font("Segoe UI", 10), namePos, fontColor);
+                // 1. 显示器名称 (截断过长文本)
+                string name = m.Name.Length > 15 ? m.Name.Substring(0, 15) + "..." : m.Name;
+                TextRenderer.DrawText(e.Graphics, name, new Font("Segoe UI", 10), new Point(20, y + 10), fontColor);
                 
-                // 2. 进度条 (圆角)
-                int barX = 140;
+                // 2. 进度条背景
+                int barX = 150;
                 int barY = y + 18;
-                int barW = 130;
-                int barH = 5;
-                
-                // 背景槽
-                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(50, 50, 50)), barX, barY, barW, barH, 2);
+                int barW = 140;
+                int barH = 4; // 原生细条风格
+                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(60, 60, 60)), barX, barY, barW, barH, 2);
 
-                // 前景条
-                int fillW = (int)(barW * (m.LastBrightness / 100.0));
-                if (fillW < 4) fillW = 4; // 最小宽度
-                FillRoundedRectangle(e.Graphics, new SolidBrush(barColor), barX, barY, fillW, barH, 2);
+                // 3. 进度条前景
+                int w = (int)(barW * (m.LastBrightness / 100.0));
+                if (w < 4) w = 4; // 最小宽度
+                FillRoundedRectangle(e.Graphics, new SolidBrush(barColor), barX, barY, w, barH, 2);
 
-                // 3. 数值
-                TextRenderer.DrawText(e.Graphics, $"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), new Point(280, y + 10), fontColor);
+                // 4. 数值
+                TextRenderer.DrawText(e.Graphics, $"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), new Point(300, y + 10), fontColor);
 
                 y += 50;
             }
@@ -441,9 +405,9 @@ namespace SimpleBrightness
             }
         }
     }
-    
-    // 为了兼容性保留占位符
-    public class OsdForm : Form { public OsdForm(string n) { } public void UpdateName(string n) { } public void ShowOSD(int v, bool d, int r) { } }
+
+    // 保留旧类占位防止报错
+    public class OsdForm : Form { public OsdForm(string n){} public void UpdateName(string n){} public void ShowOSD(int v, bool d, int r, int x, int y){} }
 
     // ================== 4. Controlling Logic ==================
     public static class BrightnessController 
@@ -479,6 +443,7 @@ namespace SimpleBrightness
                     NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2);
                 }
             } else if (monitor.Type == MonitorType.DDC) {
+                // 左键(True)=ON, 右键(False)=OFF
                 uint code = turnOn ? 0x01u : 0x04u; 
                 NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
             }
@@ -597,62 +562,45 @@ namespace SimpleBrightness
     // ================== 8. NativeMethods ==================
     internal static class NativeMethods { [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumDelegate lpfnEnum, IntPtr dwData); public delegate bool MonitorEnumDelegate(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData); [DllImport("dxva2.dll")] public static extern bool GetNumberOfPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, ref int pdwNumberOfPhysicalMonitors); [DllImport("dxva2.dll", EntryPoint = "GetPhysicalMonitorsFromHMONITOR")] public static extern bool GetPhysicalMonitorsFromHMONITOR(IntPtr hMonitor, int dwPhysicalMonitorArraySize, [Out] PHYSICAL_MONITOR[] pPhysicalMonitorArray); [DllImport("dxva2.dll")] public static extern bool SetVCPFeature(IntPtr hMonitor, byte bVCPCode, uint dwNewValue); [DllImport("dxva2.dll")] public static extern bool GetVCPFeatureAndVCPFeatureReply(IntPtr hMonitor, byte bVCPCode, IntPtr pvct, ref uint pdwCurrentValue, ref uint pdwMaximumValue); [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse); [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p); [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount); [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Auto)] public static extern IntPtr GetParent(IntPtr hWnd); [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam); [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left; public int top; public int right; public int bottom; } [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } }
     
-    // ================== 9. CurveEditorForm ==================
+    // ================== 9. CurveEditorForm (UI修复) ==================
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; private AppConfig _config; private Dictionary<int, int> _currentPoints; private FlowLayoutPanel _panel;
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
             _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(config.GetCurveForMonitor(monitor.UniqueId));
             this.Size = new Size(850, 500); this.BackColor = Color.FromArgb(31, 31, 31); this.StartPosition = FormStartPosition.CenterScreen; this.Text = "Curve Editor";
-            
             Panel top = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(25, 25, 25) };
             Label title = new Label { Text = $"编辑: {monitor.Name}", Location = new Point(15, 18), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold) };
-            
             NumericUpDown num = new NumericUpDown { Value = 50, Width = 80, Location = new Point(350, 13), Font = new Font("Segoe UI", 10) };
             Button add = new Button { Text = "添加节点", Width = 110, Height = 34, Location = new Point(440, 13), BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             Button save = new Button { Text = "保存并生效", Width = 120, Height = 34, Location = new Point(700, 13), BackColor = Color.Teal, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat };
-            
             add.Click += (s, e) => { int x = (int)num.Value; if (!_currentPoints.ContainsKey(x)) { _currentPoints[x] = x; RefreshSliders(); }};
             save.Click += (s, e) => { _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); _config.Save(); this.Close(); };
-            
             top.Controls.AddRange(new Control[] { title, num, add, save });
             this.Controls.Add(top);
-            
             _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 10, 0, 0) };
             this.Controls.Add(_panel); 
             _panel.BringToFront();
-
             RefreshSliders();
         }
-        
         private void RefreshSliders() { _panel.Controls.Clear(); if (!_currentPoints.ContainsKey(0)) _currentPoints[0]=0; if(!_currentPoints.ContainsKey(100)) _currentPoints[100]=100; foreach(var k in _currentPoints.Keys.OrderBy(x=>x)) _panel.Controls.Add(CreateItem(k, _currentPoints[k])); }
-        
         private Control CreateItem(int x, int y) { 
              Panel p = new Panel { Width = 70, Height = 320, Margin = new Padding(8), BackColor = Color.FromArgb(45,45,45) };
-             
              Label l = new Label { Text = y.ToString(), Top = 5, Width = 70, Height = 25, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Cyan, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
-             
              int panelH = 320; int labelH = 20; int btnH = 20; 
              Label k = new Label { Text = x + "%", Top = panelH - labelH - btnH - 5, Width = 70, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = new Font("Segoe UI", 9) };
-             
              Control bottomCtrl;
              if (x != 0 && x != 100) {
-                 Button d = new Button { Text = "×", Top = panelH - btnH - 5, Left = 20, Width = 30, Height = 20, ForeColor = Color.Red, FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent };
-                 d.FlatAppearance.BorderSize = 0;
-                 d.Click += (s, e) => { _currentPoints.Remove(x); RefreshSliders(); };
-                 bottomCtrl = d;
+                 Button d = new Button { Text = "×", Top = panelH - btnH - 5, Left = 20, Width = 30, Height = 20, ForeColor = Color.Red, FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent }; d.FlatAppearance.BorderSize = 0;
+                 d.Click += (s, e) => { _currentPoints.Remove(x); RefreshSliders(); }; bottomCtrl = d;
              } else {
-                 Label lockLbl = new Label { Text = "🔒", Top = panelH - btnH - 5, Width = 70, Height = 20, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gray, Font = new Font("Segoe UI", 8) };
-                 bottomCtrl = lockLbl;
+                 Label lockLbl = new Label { Text = "🔒", Top = panelH - btnH - 5, Width = 70, Height = 20, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gray, Font = new Font("Segoe UI", 8) }; bottomCtrl = lockLbl;
              }
-             
              int sliderTop = 35; int sliderH = (panelH - labelH - btnH - 5) - sliderTop - 5;
-             
              TrackBar t = new TrackBar { Orientation = Orientation.Vertical, Minimum = 0, Maximum = 100, Value = y, Top = sliderTop, Height = sliderH, Width = 45, Left = 12, TickStyle = TickStyle.None };
              ToolTip tip = new ToolTip(); 
              t.Scroll += (s, e) => { _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); tip.SetToolTip(t, t.Value.ToString()); };
              t.MouseWheel += (s, e) => { int change = e.Delta > 0 ? 1 : -1; t.Value = Math.Clamp(t.Value + change, 0, 100); _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); ((HandledMouseEventArgs)e).Handled = true; };
-             
              p.Controls.AddRange(new Control[]{l, t, k, bottomCtrl}); 
              return p;
         }
