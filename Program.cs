@@ -61,7 +61,7 @@ namespace SimpleBrightness
             RegisterSystemEvents();
 
             contextMenu = new ContextMenuStrip();
-            contextMenu.Items.Add("关于 & 说明", null, (s, e) => new HelpForm().ShowDialog());
+            contextMenu.Items.Add("软件使用说明", null, (s, e) => new HelpForm().ShowDialog());
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
             
