@@ -17,6 +17,7 @@ namespace SimpleBrightness
             using (Bitmap bmp = new Bitmap(32, 32)) using (Graphics g = Graphics.FromImage(bmp)) { 
                 g.SmoothingMode = SmoothingMode.AntiAlias; 
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                // 使用 Segoe MDL2 Assets 绘制类似原生的太阳图标
                 Font iconFont = new Font("Segoe MDL2 Assets", 18, FontStyle.Regular);
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(-7, -1), Color.White);
                 return Icon.FromHandle(bmp.GetHicon()); 
@@ -24,30 +25,38 @@ namespace SimpleBrightness
         } 
     }
 
-    // ================== Unified OSD (Remastered) ==================
+    // ================== Unified OSD (Windows Native Style) ==================
     public class UnifiedOsdForm : Form
     {
         private System.Windows.Forms.Timer _timer;
         private List<MonitorInfo> _monitors;
 
+        // 定义颜色配置
+        private readonly Color _bgColor = Color.FromArgb(25, 25, 25); // Win11 OSD 背景色
+        private readonly Color _borderColor = Color.FromArgb(55, 55, 55);
+        private readonly Color _textColor = Color.FromArgb(221, 221, 221); // #DDDDDD
+        private readonly Color _trackColor = Color.FromArgb(65, 65, 65);   // 进度条底槽
+        private readonly Color _fillColor = Color.FromArgb(0, 120, 212);   // Windows 强调色(蓝)
+        
         public UnifiedOsdForm(List<MonitorInfo> monitors)
         {
             _monitors = monitors;
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
-            this.BackColor = Color.FromArgb(32, 32, 32); 
+            this.BackColor = _bgColor; 
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
-            this.Padding = new Padding(15);
             
-            // 自动高度
-            int rowHeight = 45; 
-            int totalHeight = 30 + (monitors.Count * rowHeight);
-            this.Size = new Size(340, totalHeight);
+            // 根据显示器数量计算高度，增加一点间距使其不那么拥挤
+            int itemHeight = 56; 
+            int totalHeight = 20 + (monitors.Count * itemHeight);
             
-            // 圆角
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 16, 16));
+            // 宽度设为 360，稍微宽一点以适应原生风格
+            this.Size = new Size(360, totalHeight);
+            
+            // Win11 风格圆角 (18px)
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18));
             
             _timer = new System.Windows.Forms.Timer { Interval = 1500 };
             _timer.Tick += (s, e) => this.Hide();
@@ -58,6 +67,7 @@ namespace SimpleBrightness
         public void UpdateDisplay()
         {
             var screen = Screen.FromPoint(Cursor.Position);
+            // 位于屏幕底部中央上方
             this.Location = new Point(
                 screen.Bounds.X + (screen.Bounds.Width - Width) / 2, 
                 screen.Bounds.Bottom - this.Height - 120
@@ -72,51 +82,87 @@ namespace SimpleBrightness
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-            using (var borderPen = new Pen(Color.FromArgb(60, 60, 60), 1)) {
-                e.Graphics.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
+            // 1. 绘制边框
+            using (var borderPen = new Pen(_borderColor, 1)) {
+                Rectangle rect = this.ClientRectangle;
+                rect.Width -= 1; rect.Height -= 1;
+                // 使用 Rounded Rect 路径绘制边框会更平滑，这里简化为矩形，因为 Region 已经切了圆角
+                g.DrawRectangle(borderPen, rect);
             }
 
-            int y = 15;
-            // 垂直居中格式
-            StringFormat centerLeft = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
-            StringFormat centerRight = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Far };
-
-            foreach (var m in _monitors)
+            // 2. 动态布局参数
+            int paddingX = 20;    // 左右边距
+            int itemH = 56;       // 每行高度
+            int startY = 10;      // 起始 Y
+            
+            // 字体定义
+            using (Font nameFont = new Font("Segoe UI", 10.5f, FontStyle.Regular)) // 原生风格通常不是粗体
+            using (Font valFont = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold))
+            using (Brush textBrush = new SolidBrush(_textColor))
+            using (Brush valBrush = new SolidBrush(Color.FromArgb(200, 200, 200))) // 数值稍微暗一点
+            using (Brush trackBrush = new SolidBrush(_trackColor))
+            using (Brush fillBrush = new SolidBrush(_fillColor))
+            using (StringFormat alignLeft = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near, Trimming = StringTrimming.EllipsisCharacter })
+            using (StringFormat alignRight = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Far })
             {
-                // [修改] 1. 名字 (左侧 X由20改为15)
-                // 窗口宽340，左边距15
-                string name = m.Name.Length > 12 ? m.Name.Substring(0, 12) + "..." : m.Name;
-                Rectangle nameRect = new Rectangle(15, y, 110, 30); 
-                e.Graphics.DrawString(name, new Font("Segoe UI", 10, FontStyle.Bold), Brushes.White, nameRect, centerLeft);
-                
-                // [修改] 2. 进度条 (中间 X由140改为135)
-                // 15(左边距) + 110(名宽) + 10(间隔) = 135
-                int barX = 135; 
-                int barY = y + 12; // 垂直调整
-                int barW = 140;
-                int barH = 6;     // 圆角条
-                
-                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(60, 60, 60)), barX, barY, barW, barH, 3);
+                int currentY = startY;
 
-                int w = (int)(barW * (m.LastBrightness / 100.0));
-                if (w < 6) w = 6;
-                FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(0, 120, 212)), barX, barY, w, barH, 3); // 系统蓝
+                foreach (var m in _monitors)
+                {
+                    // --- 动态计算区域 ---
+                    
+                    // 名字区域：左边 110px
+                    Rectangle nameRect = new Rectangle(paddingX, currentY, 110, itemH);
+                    
+                    // 数值区域：右边 45px
+                    Rectangle valRect = new Rectangle(this.Width - paddingX - 45, currentY, 45, itemH);
+                    
+                    // 进度条区域：填满中间剩余空间 (自适应关键)
+                    int barLeft = nameRect.Right + 10;
+                    int barRight = valRect.Left - 10;
+                    int barWidth = barRight - barLeft;
+                    int barHeight = 6; // 细长条，类似 Windows 音量条的轨道
+                    int barTop = currentY + (itemH - barHeight) / 2;
 
-                // [修改] 3. 数值 (右侧 X由290改为285)
-                // 135(条X) + 140(条宽) + 10(间隔) = 285
-                // 285 + 40(宽) = 325。窗口宽340。右边距 = 15。
-                // 此时 左边距15，右边距15，完美对称。
-                Rectangle valRect = new Rectangle(285, y, 40, 30);
-                e.Graphics.DrawString($"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), Brushes.Cyan, valRect, centerRight);
+                    // --- 绘制 ---
 
-                y += 45;
+                    // 1. 名字 (颜色 #DDDDDD)
+                    g.DrawString(m.Name, nameFont, textBrush, nameRect, alignLeft);
+
+                    // 2. 进度条背景 (底槽)
+                    FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
+
+                    // 3. 进度条前景 (填充)
+                    // 计算填充宽度
+                    int fillW = (int)(barWidth * (m.LastBrightness / 100.0f));
+                    // 确保最小可见度，且不超过最大宽度
+                    if (fillW < barHeight) fillW = (m.LastBrightness > 0) ? barHeight : 0; 
+                    if (fillW > barWidth) fillW = barWidth;
+
+                    if (fillW > 0)
+                    {
+                        FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
+                    }
+
+                    // 4. 数值 (右对齐)
+                    g.DrawString(m.LastBrightness.ToString(), valFont, valBrush, valRect, alignRight);
+
+                    currentY += itemH;
+                }
             }
         }
         
-        private void FillRoundedRectangle(Graphics g, Brush brush, int x, int y, int w, int h, int r) {
+        // 绘制圆角矩形的通用方法
+        private void FillRoundedRectangle(Graphics g, Brush brush, float x, float y, float w, float h, float r) {
+            // 防止半径过大
+            if (r > h / 2) r = h / 2;
+            if (r > w / 2) r = w / 2;
+            
             using (GraphicsPath path = new GraphicsPath()) {
                 path.AddArc(x, y, r * 2, r * 2, 180, 90);
                 path.AddLine(x + r, y, x + w - r, y);
@@ -130,6 +176,8 @@ namespace SimpleBrightness
             }
         }
     }
+
+    // ================== 其他 Form 保持不变 (HelpForm, SettingsForm 等) ==================
 
     public class HelpForm : Form {
         public HelpForm() {
