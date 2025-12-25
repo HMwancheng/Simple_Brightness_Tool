@@ -58,9 +58,9 @@ namespace SimpleBrightness
             contextMenu = new ContextMenuStrip();
             
             // [修改] 右键菜单结构
-            contextMenu.Items.Add("食用说明", null, (s, e) => new HelpForm().ShowDialog());
-            contextMenu.Items.Add("查看本项目", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
-            contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
+            contextMenu.Items.Add("使用说明", null, (s, e) => new HelpForm().ShowDialog());
+            contextMenu.Items.Add("项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
+            contextMenu.Items.Add("踢踢作者的屁股", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
             
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
