@@ -162,7 +162,7 @@ namespace SimpleBrightness
 
     public class HelpForm : Form {
         public HelpForm() {
-            this.Text = "食用说明"; // 修改标题
+            this.Text = "使用说明"; // 修改标题
             this.Size = new Size(500, 420); 
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog; this.MaximizeBox = false; this.MinimizeBox = false;
