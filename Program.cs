@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Diagnostics; // 添加此项以支持 Process.Start
 
 namespace SimpleBrightness
 {
@@ -55,7 +56,12 @@ namespace SimpleBrightness
             RegisterSystemEvents();
 
             contextMenu = new ContextMenuStrip();
-            contextMenu.Items.Add("关于 & 说明", null, (s, e) => new HelpForm().ShowDialog());
+            
+            // [修改] 右键菜单结构
+            contextMenu.Items.Add("食用说明", null, (s, e) => new HelpForm().ShowDialog());
+            contextMenu.Items.Add("查看本项目", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
+            contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
+            
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
             
@@ -92,6 +98,19 @@ namespace SimpleBrightness
             mouseHook = new MouseHook();
             mouseHook.MouseWheel += OnGlobalMouseWheel;
             mouseHook.Install();
+        }
+
+        // [新增] 安全打开网页的辅助方法
+        private void OpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("无法打开链接: " + ex.Message);
+            }
         }
 
         private void SyncAllBrightness()
