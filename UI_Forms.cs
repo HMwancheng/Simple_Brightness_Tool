@@ -86,13 +86,15 @@ namespace SimpleBrightness
 
             foreach (var m in _monitors)
             {
-                // 1. 名字 (左侧, 粗体, 白色)
+                // [修改] 1. 名字 (左侧 X由20改为15)
+                // 窗口宽340，左边距15
                 string name = m.Name.Length > 12 ? m.Name.Substring(0, 12) + "..." : m.Name;
-                Rectangle nameRect = new Rectangle(20, y, 110, 30);
+                Rectangle nameRect = new Rectangle(15, y, 110, 30); 
                 e.Graphics.DrawString(name, new Font("Segoe UI", 10, FontStyle.Bold), Brushes.White, nameRect, centerLeft);
                 
-                // 2. 进度条 (中间)
-                int barX = 140;
+                // [修改] 2. 进度条 (中间 X由140改为135)
+                // 15(左边距) + 110(名宽) + 10(间隔) = 135
+                int barX = 135; 
                 int barY = y + 12; // 垂直调整
                 int barW = 140;
                 int barH = 6;     // 圆角条
@@ -103,8 +105,11 @@ namespace SimpleBrightness
                 if (w < 6) w = 6;
                 FillRoundedRectangle(e.Graphics, new SolidBrush(Color.FromArgb(0, 120, 212)), barX, barY, w, barH, 3); // 系统蓝
 
-                // 3. 数值 (右侧, 青色)
-                Rectangle valRect = new Rectangle(290, y, 40, 30);
+                // [修改] 3. 数值 (右侧 X由290改为285)
+                // 135(条X) + 140(条宽) + 10(间隔) = 285
+                // 285 + 40(宽) = 325。窗口宽340。右边距 = 15。
+                // 此时 左边距15，右边距15，完美对称。
+                Rectangle valRect = new Rectangle(285, y, 40, 30);
                 e.Graphics.DrawString($"{m.LastBrightness}%", new Font("Segoe UI", 10, FontStyle.Bold), Brushes.Cyan, valRect, centerRight);
 
                 y += 45;
