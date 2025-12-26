@@ -11,7 +11,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Diagnostics; // 添加此项以支持 Process.Start
+using System.Diagnostics;
 
 namespace SimpleBrightness
 {
@@ -40,7 +40,7 @@ namespace SimpleBrightness
         private List<MonitorInfo> monitors = new List<MonitorInfo>();
         private AppConfig config;
         private MouseHook mouseHook;
-        private UnifiedOsdForm? _unifiedOsd; // 引用 UI_Forms.cs 中的类
+        private UnifiedOsdForm? _unifiedOsd; 
         private DateTime _lastIconHoverTime = DateTime.MinValue;
         private bool _isDebugMode = false;
 
@@ -57,10 +57,9 @@ namespace SimpleBrightness
 
             contextMenu = new ContextMenuStrip();
             
-            // [修改] 右键菜单结构
-            contextMenu.Items.Add("使用说明", null, (s, e) => new HelpForm().ShowDialog());
-            contextMenu.Items.Add("项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
-            contextMenu.Items.Add("踢踢作者的屁股", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
+            contextMenu.Items.Add("食用说明", null, (s, e) => new HelpForm().ShowDialog());
+            contextMenu.Items.Add("查看本项目", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
+            contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
             
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
@@ -68,6 +67,8 @@ namespace SimpleBrightness
             var debugItem = new ToolStripMenuItem("🛠 调试模式 (忽略曲线)", null, (s, e) => {
                 _isDebugMode = !_isDebugMode;
                 ((ToolStripMenuItem)s).Checked = _isDebugMode;
+                // 切换调试模式后刷新一下，确保数值逻辑一致
+                ReloadMonitorsSafe();
             });
             contextMenu.Items.Add(debugItem);
             
@@ -100,17 +101,10 @@ namespace SimpleBrightness
             mouseHook.Install();
         }
 
-        // [新增] 安全打开网页的辅助方法
         private void OpenUrl(string url)
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("无法打开链接: " + ex.Message);
-            }
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch (Exception ex) { MessageBox.Show("无法打开链接: " + ex.Message); }
         }
 
         private void SyncAllBrightness()
@@ -175,27 +169,40 @@ namespace SimpleBrightness
             config.Save();
         }
 
+        // [核心修复] 读取硬件亮度并反推软件值
         private void ReadRealBrightness()
         {
             foreach (var m in monitors) {
-                int realVal = -1;
+                int realHardwareVal = -1;
+                
                 if (m.Type == MonitorType.WMI) {
                     try {
                         var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
                         foreach (ManagementObject obj in searcher.Get()) {
                             var val = obj["CurrentBrightness"];
                             if (val != null && int.TryParse(val.ToString(), out int pVal)) 
-                                realVal = pVal;
+                                realHardwareVal = pVal;
                         }
                     } catch { }
                 } else if (m.Type == MonitorType.DDC) {
-                     realVal = BrightnessController.GetVCPBrightness(m.Handle);
+                     realHardwareVal = BrightnessController.GetVCPBrightness(m.Handle);
                 }
-                if (realVal != -1) {
-                    m.LastBrightness = realVal;
+
+                if (realHardwareVal != -1) {
+                    int finalSoftwareVal = realHardwareVal;
+
+                    // 如果不是调试模式，且是 DDC 显示器，则需要根据曲线反推软件数值
+                    // 解决：硬件20 -> 反推软件40。如果不反推，直接赋20，下次操作会基于20计算(对应硬件5)，导致亮度骤降。
+                    if (!_isDebugMode && m.Type == MonitorType.DDC) {
+                         var curve = config.GetCurveForMonitor(m.UniqueId);
+                         finalSoftwareVal = ReverseInterpolate(realHardwareVal, curve);
+                    }
+
+                    m.LastBrightness = finalSoftwareVal;
+                    
                     var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
                     if (form != null && !form.IsDisposed && form.Visible)
-                        form.Invoke(new Action(() => form.UpdateSlider(m.UniqueId, realVal)));
+                        form.Invoke(new Action(() => form.UpdateSlider(m.UniqueId, finalSoftwareVal)));
                 }
             }
         }
@@ -269,6 +276,7 @@ namespace SimpleBrightness
                 _unifiedOsd.UpdateDisplay();
         }
 
+        // 正向插值：软件 -> 硬件 (X -> Y)
         private int Interpolate(int input, Dictionary<int, int> points) {
             var sorted = points.OrderBy(k => k.Key).ToList();
             if (input <= sorted.First().Key) return sorted.First().Value;
@@ -279,6 +287,32 @@ namespace SimpleBrightness
                 }
             }
             return input;
+        }
+
+        // [新增] 反向插值：硬件 -> 软件 (Y -> X)
+        private int ReverseInterpolate(int hardwareVal, Dictionary<int, int> points) {
+            var sorted = points.OrderBy(k => k.Key).ToList();
+            // 边界检查
+            if (hardwareVal <= sorted.First().Value) return sorted.First().Key;
+            if (hardwareVal >= sorted.Last().Value) return sorted.Last().Key;
+
+            for (int i = 0; i < sorted.Count - 1; i++) {
+                int y1 = sorted[i].Value;
+                int y2 = sorted[i+1].Value;
+                
+                // 判断是否在Y轴区间内 (处理可能的曲线波动，虽然亮度曲线通常是单调递增的)
+                // 注意：这里假设曲线是分段线性的
+                if ((hardwareVal >= y1 && hardwareVal <= y2) || (hardwareVal <= y1 && hardwareVal >= y2)) {
+                    int x1 = sorted[i].Key;
+                    int x2 = sorted[i+1].Key;
+                    
+                    if (y1 == y2) return x1; // 避免除以零 (水平线段)
+                    
+                    // 线性反推公式: x = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+                    return x1 + (hardwareVal - y1) * (x2 - x1) / (y2 - y1);
+                }
+            }
+            return hardwareVal; // 兜底
         }
 
         private void ShowBrightnessWindow() {
