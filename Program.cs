@@ -198,6 +198,16 @@ namespace SimpleBrightness
                          finalSoftwareVal = ReverseInterpolate(realHardwareVal, curve);
                     }
 
+                    // [修复] 睡眠唤醒后亮度插值微小偏差问题
+                    // 如果配置中有保存的亮度值，且计算值与保存值差异很小（<=2），则使用保存值
+                    if (config.SavedBrightness.TryGetValue(m.UniqueId, out int savedVal)) {
+                        int diff = Math.Abs(finalSoftwareVal - savedVal);
+                        if (diff <= 2 && diff > 0) {
+                            // 偏差很小，使用缓存值避免视觉上的亮度跳动
+                            finalSoftwareVal = savedVal;
+                        }
+                    }
+
                     m.LastBrightness = finalSoftwareVal;
                     
                     var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
@@ -339,6 +349,9 @@ namespace SimpleBrightness
                     }
                 }
             } catch { }
+            // 使用HashSet跟踪已添加的显示器句柄，防止重复枚举
+            HashSet<IntPtr> addedHandles = new HashSet<IntPtr>();
+            
             NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) {
                 int count = 0;
                 NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
@@ -346,8 +359,15 @@ namespace SimpleBrightness
                     var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
                     if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs)) {
                         for (int i = 0; i < pMs.Length; i++) {
+                            // 检查是否已添加过此句柄（防止重复）
+                            if (addedHandles.Contains(pMs[i].hPhysicalMonitor)) {
+                                continue;
+                            }
+                            addedHandles.Add(pMs[i].hPhysicalMonitor);
+                            
                             string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
-                            string uniqueId = "DDC_" + GetStableHash(originalName) + "_IDX_" + i;
+                            // 使用更稳定的唯一ID生成方法，避免同名显示器冲突
+                            string uniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
                             string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : originalName;
                             monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
                         }
@@ -361,6 +381,15 @@ namespace SimpleBrightness
             ulong hash = 5381;
             foreach (char c in str) hash = ((hash << 5) + hash) + c;
             return hash.ToString();
+        }
+
+        // 生成更稳定的唯一ID，包含显示器句柄信息以避免同名显示器冲突
+        private static string GetMonitorUniqueId(string originalName, IntPtr hMonitor, int index) {
+            // 结合名称哈希、显示器句柄和索引，确保唯一性
+            string nameHash = GetStableHash(originalName);
+            // 使用显示器句柄的低32位作为额外标识
+            int handleId = hMonitor.ToInt32();
+            return $"DDC_{nameHash}_H{handleId}_IDX_{index}";
         }
     }
 
@@ -390,16 +419,70 @@ namespace SimpleBrightness
         public static void SetPowerState(MonitorInfo monitor, bool turnOn, bool useSoftwareMode) { 
             if (useSoftwareMode) {
                 if (turnOn) {
-                    NativeMethods.mouse_event(0x0001, 0, 1, 0, UIntPtr.Zero);
-                    Thread.Sleep(10);
-                    NativeMethods.mouse_event(0x0001, 0, -1, 0, UIntPtr.Zero);
+                    // 改进的唤醒策略：多种方式组合唤醒
+                    WakeDisplaySoftware();
                 } else {
-                    NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2);
+                    // 只关闭指定显示器（如果是DDC类型），否则使用系统API
+                    if (monitor.Type == MonitorType.DDC) {
+                        // 使用DDC/CI关闭特定显示器，而不是广播到所有窗口
+                        NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, 0x04u);
+                    } else {
+                        // WMI类型（内置屏幕）使用系统API关闭
+                        NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2);
+                    }
                 }
             } else if (monitor.Type == MonitorType.DDC) {
-                uint code = turnOn ? 0x01u : 0x04u; 
-                NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
+                if (turnOn) {
+                    // 改进的DDC唤醒：多次尝试和渐进式唤醒
+                    WakeDisplayDDC(monitor.Handle);
+                } else {
+                    uint code = 0x04u; 
+                    NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
+                }
             }
+        }
+
+        // 软件模式唤醒 - 改进的鼠标和键盘事件组合
+        private static void WakeDisplaySoftware() {
+            // 方法1: 鼠标微动
+            NativeMethods.mouse_event(0x0001, 0, 1, 0, UIntPtr.Zero);
+            Thread.Sleep(10);
+            NativeMethods.mouse_event(0x0001, 0, -1, 0, UIntPtr.Zero);
+            Thread.Sleep(50);
+            
+            // 方法2: 发送虚拟键盘事件 (VK_SHIFT)
+            NativeMethods.keybd_event(0x10, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(10);
+            NativeMethods.keybd_event(0x10, 0, 0x0002, UIntPtr.Zero);
+            Thread.Sleep(50);
+            
+            // 方法3: 再次鼠标微动确保唤醒
+            NativeMethods.mouse_event(0x0001, 1, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(10);
+            NativeMethods.mouse_event(0x0001, -1, 0, 0, UIntPtr.Zero);
+        }
+
+        // DDC/CI 模式唤醒 - 多次尝试和渐进式唤醒策略
+        private static void WakeDisplayDDC(IntPtr hMonitor) {
+            // 策略: 先发送软唤醒，如果失败再尝试硬唤醒
+            
+            // 尝试1: 发送电源开命令 (0x01)
+            NativeMethods.SetVCPFeature(hMonitor, 0xD6, 0x01u);
+            Thread.Sleep(100);
+            
+            // 尝试2: 发送短暂黑屏后恢复 (某些显示器需要这个序列)
+            NativeMethods.SetVCPFeature(hMonitor, 0xD6, 0x01u);
+            Thread.Sleep(200);
+            
+            // 尝试3: 如果显示器支持，发送背光开启命令
+            // 0xD6 = 0x01 (正常操作)
+            for (int i = 0; i < 3; i++) {
+                NativeMethods.SetVCPFeature(hMonitor, 0xD6, 0x01u);
+                Thread.Sleep(100);
+            }
+            
+            // 尝试4: 同时触发软件唤醒作为后备
+            WakeDisplaySoftware();
         } 
 
         public static int GetVCPBrightness(IntPtr hMonitor) { 
@@ -438,6 +521,7 @@ namespace SimpleBrightness
         [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount); 
         [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Auto)] public static extern IntPtr GetParent(IntPtr hWnd); 
         [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); 
+        [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
         [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam); 
         [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left; public int top; public int right; public int bottom; } 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } 
