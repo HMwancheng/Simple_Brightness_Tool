@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "GMN" ]
+    branches: [ "GMN", "TR-CG" ]
   workflow_dispatch:
 
 # 必须赋予写权限才能创建 Release

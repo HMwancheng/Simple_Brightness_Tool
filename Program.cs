@@ -137,6 +137,67 @@ namespace SimpleBrightness
         }
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
 
+        // 获取显示器的亮度配置值，支持新旧ID格式兼容
+        private int? GetSavedBrightnessForMonitor(MonitorInfo m, int index)
+        {
+            // 先尝试新ID
+            if (config.SavedBrightness.TryGetValue(m.UniqueId, out int val)) return val;
+            
+            // 尝试旧ID格式 (DDC_{hash}_IDX_{i})
+            string oldId = "DDC_" + GetStableHash(m.Name) + "_IDX_" + index;
+            if (config.SavedBrightness.TryGetValue(oldId, out int oldVal)) {
+                // 迁移：复制到新ID
+                config.SavedBrightness[m.UniqueId] = oldVal;
+                return oldVal;
+            }
+            return null;
+        }
+
+        // 检查显示器是否被隐藏，支持新旧ID格式
+        private bool IsMonitorHidden(MonitorInfo m, int index)
+        {
+            // 先检查新ID
+            if (config.HiddenMonitors.Contains(m.UniqueId)) return true;
+            
+            // 检查旧ID格式
+            string oldId = "DDC_" + GetStableHash(m.Name) + "_IDX_" + index;
+            if (config.HiddenMonitors.Contains(oldId)) {
+                // 迁移
+                config.HiddenMonitors.Remove(oldId);
+                config.HiddenMonitors.Add(m.UniqueId);
+                return true;
+            }
+            return false;
+        }
+
+        // 获取显示器的曲线配置，支持新旧ID格式
+        private Dictionary<int, int>? GetCurveForMonitor(MonitorInfo m, int index)
+        {
+            // 先尝试新ID
+            if (config.Curves.TryGetValue(m.UniqueId, out var curve)) return curve;
+            
+            // 尝试旧ID格式
+            string oldId = "DDC_" + GetStableHash(m.Name) + "_IDX_" + index;
+            if (config.Curves.TryGetValue(oldId, out var oldCurve)) {
+                config.Curves[m.UniqueId] = oldCurve;
+                return oldCurve;
+            }
+            return null;
+        }
+
+        // 获取曲线配置的便捷方法（使用显示器在列表中的索引）
+        private Dictionary<int, int> GetCurveForMonitorWithFallback(MonitorInfo m)
+        {
+            int index = monitors.IndexOf(m);
+            if (index < 0) index = 0;
+            
+            var curve = GetCurveForMonitor(m, index);
+            if (curve != null) return curve;
+            
+            // 返回默认曲线
+            return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
+        }
+
         private void ReloadMonitorsSafe() {
             var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
             if (form != null && !form.IsDisposed && form.Visible) form.Invoke(new Action(() => form.Close()));
@@ -147,8 +208,11 @@ namespace SimpleBrightness
             }
             foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             RefreshMonitors();
+            int idx = 0;
             foreach(var m in monitors) {
-                if (config.SavedBrightness.ContainsKey(m.UniqueId)) m.LastBrightness = config.SavedBrightness[m.UniqueId];
+                var savedVal = GetSavedBrightnessForMonitor(m, idx);
+                if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
+                idx++;
             }
             Task.Run(() => ReadRealBrightness());
         }
@@ -156,9 +220,12 @@ namespace SimpleBrightness
         private void RestoreOrReadBrightness()
         {
             bool needReadHardware = false;
+            int idx = 0;
             foreach (var m in monitors) {
-                if (config.SavedBrightness.ContainsKey(m.UniqueId)) m.LastBrightness = config.SavedBrightness[m.UniqueId];
+                var savedVal = GetSavedBrightnessForMonitor(m, idx);
+                if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
                 else needReadHardware = true;
+                idx++;
             }
             if (needReadHardware) Task.Run(() => ReadRealBrightness());
         }
@@ -194,17 +261,20 @@ namespace SimpleBrightness
                     // 如果不是调试模式，且是 DDC 显示器，则需要根据曲线反推软件数值
                     // 解决：硬件20 -> 反推软件40。如果不反推，直接赋20，下次操作会基于20计算(对应硬件5)，导致亮度骤降。
                     if (!_isDebugMode && m.Type == MonitorType.DDC) {
-                         var curve = config.GetCurveForMonitor(m.UniqueId);
+                         var curve = GetCurveForMonitorWithFallback(m);
                          finalSoftwareVal = ReverseInterpolate(realHardwareVal, curve);
                     }
 
                     // [修复] 睡眠唤醒后亮度插值微小偏差问题
                     // 如果配置中有保存的亮度值，且计算值与保存值差异很小（<=2），则使用保存值
-                    if (config.SavedBrightness.TryGetValue(m.UniqueId, out int savedVal)) {
-                        int diff = Math.Abs(finalSoftwareVal - savedVal);
+                    int idx = monitors.IndexOf(m);
+                    if (idx < 0) idx = 0;
+                    var savedBrightness = GetSavedBrightnessForMonitor(m, idx);
+                    if (savedBrightness.HasValue) {
+                        int diff = Math.Abs(finalSoftwareVal - savedBrightness.Value);
                         if (diff <= 2 && diff > 0) {
                             // 偏差很小，使用缓存值避免视觉上的亮度跳动
-                            finalSoftwareVal = savedVal;
+                            finalSoftwareVal = savedBrightness.Value;
                         }
                     }
 
@@ -252,7 +322,8 @@ namespace SimpleBrightness
             m.LastBrightness = val;
             int finalVal = val;
             if (!_isDebugMode && m.Type == MonitorType.DDC) {
-                var curve = config.GetCurveForMonitor(m.UniqueId);
+                // 获取曲线配置，支持新旧ID格式兼容
+                var curve = GetCurveForMonitorWithFallback(m);
                 finalVal = Interpolate(val, curve);
             }
             
@@ -335,6 +406,48 @@ namespace SimpleBrightness
 
         private void ShowSettings() { var form = new SettingsForm(config); form.Show(); }
 
+        // 配置迁移：将旧版ID格式的配置迁移到新版
+        private void MigrateOldConfig()
+        {
+            bool needSave = false;
+            
+            // 迁移 CustomNames
+            var oldCustomNames = config.CustomNames.Keys.ToList();
+            foreach (var oldId in oldCustomNames) {
+                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
+                    // 这是旧版ID格式: DDC_{hash}_IDX_{i}
+                    // 需要找到对应的新显示器并迁移
+                    // 由于无法直接映射，我们保留旧配置，在RefreshMonitors中处理
+                }
+            }
+            
+            // 迁移 SavedBrightness
+            var oldBrightnessKeys = config.SavedBrightness.Keys.ToList();
+            foreach (var oldId in oldBrightnessKeys) {
+                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
+                    // 旧版亮度配置，暂时保留
+                }
+            }
+            
+            // 迁移 Curves
+            var oldCurveKeys = config.Curves.Keys.ToList();
+            foreach (var oldId in oldCurveKeys) {
+                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
+                    // 旧版曲线配置，暂时保留
+                }
+            }
+            
+            // 迁移 HiddenMonitors
+            var oldHidden = config.HiddenMonitors.ToList();
+            foreach (var oldId in oldHidden) {
+                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
+                    // 旧版隐藏配置，暂时保留
+                }
+            }
+            
+            if (needSave) config.Save();
+        }
+
         public void RefreshMonitors()
         {
             monitors.Clear();
@@ -368,7 +481,20 @@ namespace SimpleBrightness
                             string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
                             // 使用更稳定的唯一ID生成方法，避免同名显示器冲突
                             string uniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
-                            string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : originalName;
+                            // 尝试获取自定义名称：先检查新ID，再检查旧ID（向后兼容）
+                            string name = originalName;
+                            if (config.CustomNames.ContainsKey(uniqueId)) {
+                                name = config.CustomNames[uniqueId];
+                            } else {
+                                // 尝试旧版ID格式，用于迁移旧配置
+                                string oldUniqueId = "DDC_" + GetStableHash(originalName) + "_IDX_" + i;
+                                if (config.CustomNames.ContainsKey(oldUniqueId)) {
+                                    name = config.CustomNames[oldUniqueId];
+                                    // 迁移：将旧配置复制到新ID
+                                    config.CustomNames[uniqueId] = name;
+                                    config.Save();
+                                }
+                            }
                             monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
                         }
                     }
