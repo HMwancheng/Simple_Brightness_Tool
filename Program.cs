@@ -294,10 +294,15 @@ namespace SimpleBrightness
             {
                 _lastIconHoverTime = DateTime.Now; 
                 int change = e.Delta > 0 ? config.ScrollStep : -config.ScrollStep;
-                foreach (var m in monitors.Where(x => !config.HiddenMonitors.Contains(x.UniqueId)))
+                int idx = 0;
+                foreach (var m in monitors)
                 {
-                    int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
-                    ApplyBrightness(m, newVal, true); 
+                    if (!IsMonitorHidden(m, idx))
+                    {
+                        int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
+                        ApplyBrightness(m, newVal, true);
+                    }
+                    idx++;
                 }
             }
         }
@@ -346,7 +351,12 @@ namespace SimpleBrightness
         private void ShowUnifiedOsd()
         {
             if (_unifiedOsd == null || _unifiedOsd.IsDisposed) {
-                var visibleMonitors = monitors.Where(x => !config.HiddenMonitors.Contains(x.UniqueId)).ToList();
+                var visibleMonitors = new List<MonitorInfo>();
+                int idx = 0;
+                foreach (var m in monitors) {
+                    if (!IsMonitorHidden(m, idx)) visibleMonitors.Add(m);
+                    idx++;
+                }
                 if (visibleMonitors.Count == 0) return;
                 _unifiedOsd = new UnifiedOsdForm(visibleMonitors);
             }

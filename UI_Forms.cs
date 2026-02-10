@@ -301,8 +301,34 @@ namespace SimpleBrightness
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; private AppConfig _config; private Dictionary<int, int> _currentPoints; private FlowLayoutPanel _panel;
+        
+        // 获取曲线配置，支持新旧ID格式兼容
+        private Dictionary<int, int> GetCurveWithFallback() {
+            // 先尝试新ID
+            if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve)) 
+                return curve;
+            
+            // 尝试旧ID格式 (DDC_{hash}_IDX_{i})
+            if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
+                string[] parts = _monitor.UniqueId.Split('_');
+                if (parts.Length >= 4) {
+                    string nameHash = parts[1];
+                    // 从UniqueId中提取索引 (格式: DDC_{hash}_H{handle}_IDX_{i})
+                    string idxStr = parts[parts.Length - 1];
+                    string oldId = $"DDC_{nameHash}_IDX_{idxStr}";
+                    if (_config.Curves.TryGetValue(oldId, out var oldCurve)) {
+                        // 迁移：复制到新ID
+                        _config.Curves[_monitor.UniqueId] = oldCurve;
+                        return oldCurve;
+                    }
+                }
+            }
+            // 返回默认曲线
+            return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
+        }
+        
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
-            _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(config.GetCurveForMonitor(monitor.UniqueId));
+            _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(GetCurveWithFallback());
             this.Size = new Size(850, 500); this.BackColor = Color.FromArgb(31, 31, 31); this.StartPosition = FormStartPosition.CenterScreen; this.Text = "Curve Editor";
             Panel top = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(25, 25, 25) };
             Label title = new Label { Text = $"编辑: {monitor.Name}", Location = new Point(15, 18), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold) };
@@ -310,7 +336,21 @@ namespace SimpleBrightness
             Button add = new Button { Text = "添加节点", Width = 110, Height = 34, Location = new Point(440, 13), BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             Button save = new Button { Text = "保存并生效", Width = 120, Height = 34, Location = new Point(700, 13), BackColor = Color.Teal, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat };
             add.Click += (s, e) => { int x = (int)num.Value; if (!_currentPoints.ContainsKey(x)) { _currentPoints[x] = x; RefreshSliders(); }};
-            save.Click += (s, e) => { _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); _config.Save(); this.Close(); };
+            save.Click += (s, e) => { 
+                _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); 
+                // 清理旧ID的曲线配置（如果存在）
+                if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
+                    string[] parts = _monitor.UniqueId.Split('_');
+                    if (parts.Length >= 4) {
+                        string nameHash = parts[1];
+                        string idxStr = parts[parts.Length - 1];
+                        string oldId = $"DDC_{nameHash}_IDX_{idxStr}";
+                        _config.Curves.Remove(oldId);
+                    }
+                }
+                _config.Save(); 
+                this.Close(); 
+            };
             top.Controls.AddRange(new Control[] { title, num, add, save });
             this.Controls.Add(top);
             _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 10, 0, 0) };
