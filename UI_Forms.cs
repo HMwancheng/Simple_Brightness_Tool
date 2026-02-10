@@ -12,16 +12,27 @@ using Microsoft.Win32;
 namespace SimpleBrightness
 {
     // ================== Icon ==================
-    public static class IconDrawer { 
-        public static Icon DrawNativeIcon() { 
-            using (Bitmap bmp = new Bitmap(32, 32)) using (Graphics g = Graphics.FromImage(bmp)) { 
-                g.SmoothingMode = SmoothingMode.AntiAlias; 
+    public static class IconDrawer {
+        public static Icon DrawNativeIcon() {
+            // 使用固定16x16图标大小（系统托盘图标标准大小）
+            // 这样在不同DPI下都能保持清晰
+            int iconSize = 16;
+            int fontSize = 14;
+            // 计算居中偏移：图标宽度(16) - 字体宽度(约12) / 2 ≈ 2
+            // 垂直居中调整
+            int offsetX = 2;
+            int offsetY = 0;
+
+            using (Bitmap bmp = new Bitmap(iconSize, iconSize))
+            using (Graphics g = Graphics.FromImage(bmp)) {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-                Font iconFont = new Font("Segoe MDL2 Assets", 18, FontStyle.Regular);
-                TextRenderer.DrawText(g, "\uE706", iconFont, new Point(-7, -1), Color.White);
-                return Icon.FromHandle(bmp.GetHicon()); 
-            } 
-        } 
+
+                Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
+                TextRenderer.DrawText(g, "\uE706", iconFont, new Point(offsetX, offsetY), Color.White);
+                return Icon.FromHandle(bmp.GetHicon());
+            }
+        }
     }
 
     // ================== Unified OSD (Windows Native Style - Modified) ==================
