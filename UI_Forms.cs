@@ -14,14 +14,13 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // 使用固定16x16图标大小（系统托盘图标标准大小）
-            // 这样在不同DPI下都能保持清晰
-            int iconSize = 16;
-            int fontSize = 14;
-            // 计算居中偏移：图标宽度(16) - 字体宽度(约12) / 2 ≈ 2
-            // 垂直居中调整
-            int offsetX = 2;
-            int offsetY = 0;
+            // 使用更大的画布确保图标完整显示
+            // 系统托盘实际显示时会自动缩放
+            int iconSize = 32;
+            int fontSize = 22;
+            // 调整偏移量让图标居中
+            int offsetX = -2;
+            int offsetY = -1;
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
