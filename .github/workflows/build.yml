@@ -49,18 +49,18 @@ jobs:
         name: SimpleBrightnessTool
         path: build_output/*.exe
 
-    # 7. 生成版本号 (仅当 BuildRelease.md 变化时执行)
+    # 7. 生成版本号 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
     # 使用时间戳作为版本号，例如 v2025.01.01.1230
     - name: Generate Tag
       id: tag
-      if: steps.check_file.outputs.release == 'true'
+      if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
       shell: bash
       run: echo "tag_name=v$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
-    # 8. 创建 Release 并上传文件 (仅当 BuildRelease.md 变化时执行)
+    # 8. 创建 Release 并上传文件 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
     - name: Create Release
       uses: softprops/action-gh-release@v1
-      if: steps.check_file.outputs.release == 'true'
+      if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
       with:
         # 使用上面生成的时间戳作为标签名
         tag_name: ${{ steps.tag.outputs.tag_name }}
