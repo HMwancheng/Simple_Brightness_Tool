@@ -14,21 +14,21 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // 使用更大的画布确保图标完整显示
-            // 系统托盘实际显示时会自动缩放
-            int iconSize = 32;
-            int fontSize = 22;
-            // 调整偏移量让图标居中
-            int offsetX = -2;
-            int offsetY = -1;
+            // 使用48x48画布确保图标完整显示
+            // Windows会自动缩放到系统托盘合适的大小
+            int iconSize = 48;
+            int fontSize = 28;
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                g.Clear(Color.Transparent);
 
                 Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
-                TextRenderer.DrawText(g, "\uE706", iconFont, new Point(offsetX, offsetY), Color.White);
+                // 使用NoPadding标志确保文本不被裁切
+                TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter;
+                TextRenderer.DrawText(g, "\uE706", iconFont, new Rectangle(0, 0, iconSize, iconSize), Color.White, flags);
                 return Icon.FromHandle(bmp.GetHicon());
             }
         }

@@ -137,15 +137,33 @@ namespace SimpleBrightness
         }
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
 
+        // 从UniqueId中提取旧版ID格式
+        private string GetOldIdFromUniqueId(string uniqueId, int index)
+        {
+            // 新ID格式: DDC_{nameHash}_H{handle}_IDX_{i}
+            // 旧ID格式: DDC_{nameHash}_IDX_{i}
+            if (uniqueId.StartsWith("DDC_") && uniqueId.Contains("_H"))
+            {
+                string[] parts = uniqueId.Split('_');
+                if (parts.Length >= 4)
+                {
+                    string nameHash = parts[1];
+                    return $"DDC_{nameHash}_IDX_{index}";
+                }
+            }
+            return "";
+        }
+
         // 获取显示器的亮度配置值，支持新旧ID格式兼容
         private int? GetSavedBrightnessForMonitor(MonitorInfo m, int index)
         {
             // 先尝试新ID
             if (config.SavedBrightness.TryGetValue(m.UniqueId, out int val)) return val;
-            
-            // 尝试旧ID格式 (DDC_{hash}_IDX_{i})
-            string oldId = "DDC_" + GetStableHash(m.Name) + "_IDX_" + index;
-            if (config.SavedBrightness.TryGetValue(oldId, out int oldVal)) {
+
+            // 尝试旧ID格式
+            string oldId = GetOldIdFromUniqueId(m.UniqueId, index);
+            if (!string.IsNullOrEmpty(oldId) && config.SavedBrightness.TryGetValue(oldId, out int oldVal))
+            {
                 // 迁移：复制到新ID
                 config.SavedBrightness[m.UniqueId] = oldVal;
                 return oldVal;
@@ -158,10 +176,11 @@ namespace SimpleBrightness
         {
             // 先检查新ID
             if (config.HiddenMonitors.Contains(m.UniqueId)) return true;
-            
+
             // 检查旧ID格式
-            string oldId = "DDC_" + GetStableHash(m.Name) + "_IDX_" + index;
-            if (config.HiddenMonitors.Contains(oldId)) {
+            string oldId = GetOldIdFromUniqueId(m.UniqueId, index);
+            if (!string.IsNullOrEmpty(oldId) && config.HiddenMonitors.Contains(oldId))
+            {
                 // 迁移
                 config.HiddenMonitors.Remove(oldId);
                 config.HiddenMonitors.Add(m.UniqueId);
@@ -176,11 +195,19 @@ namespace SimpleBrightness
             // 先尝试新ID
             if (config.Curves.TryGetValue(m.UniqueId, out var curve)) return curve;
             
-            // 尝试旧ID格式
-            string oldId = "DDC_" + GetStableHash(m.Name) + "_IDX_" + index;
-            if (config.Curves.TryGetValue(oldId, out var oldCurve)) {
-                config.Curves[m.UniqueId] = oldCurve;
-                return oldCurve;
+            // 尝试旧ID格式 - 从UniqueId中提取原始名称哈希
+            // 新ID格式: DDC_{nameHash}_H{handle}_IDX_{i}
+            // 旧ID格式: DDC_{nameHash}_IDX_{i}
+            if (m.UniqueId.StartsWith("DDC_") && m.UniqueId.Contains("_H")) {
+                string[] parts = m.UniqueId.Split('_');
+                if (parts.Length >= 4) {
+                    string nameHash = parts[1];
+                    string oldId = $"DDC_{nameHash}_IDX_{index}";
+                    if (config.Curves.TryGetValue(oldId, out var oldCurve)) {
+                        config.Curves[m.UniqueId] = oldCurve;
+                        return oldCurve;
+                    }
+                }
             }
             return null;
         }
