@@ -160,13 +160,24 @@ namespace SimpleBrightness
             // 先尝试新ID
             if (config.SavedBrightness.TryGetValue(m.UniqueId, out int val)) return val;
 
-            // 尝试旧ID格式
-            string oldId = GetOldIdFromUniqueId(m.UniqueId, index);
-            if (!string.IsNullOrEmpty(oldId) && config.SavedBrightness.TryGetValue(oldId, out int oldVal))
+            // 尝试旧ID格式 - 尝试多个可能的索引
+            if (m.UniqueId.StartsWith("DDC_") && m.UniqueId.Contains("_H"))
             {
-                // 迁移：复制到新ID
-                config.SavedBrightness[m.UniqueId] = oldVal;
-                return oldVal;
+                string[] parts = m.UniqueId.Split('_');
+                if (parts.Length >= 4)
+                {
+                    string nameHash = parts[1];
+                    for (int i = 0; i < 4; i++)
+                    {
+                        string oldId = $"DDC_{nameHash}_IDX_{i}";
+                        if (config.SavedBrightness.TryGetValue(oldId, out int oldVal))
+                        {
+                            // 迁移：复制到新ID
+                            config.SavedBrightness[m.UniqueId] = oldVal;
+                            return oldVal;
+                        }
+                    }
+                }
             }
             return null;
         }
@@ -177,14 +188,26 @@ namespace SimpleBrightness
             // 先检查新ID
             if (config.HiddenMonitors.Contains(m.UniqueId)) return true;
 
-            // 检查旧ID格式
-            string oldId = GetOldIdFromUniqueId(m.UniqueId, index);
-            if (!string.IsNullOrEmpty(oldId) && config.HiddenMonitors.Contains(oldId))
+            // 检查旧ID格式 - 尝试多个可能的索引（因为重新枚举后索引可能变化）
+            if (m.UniqueId.StartsWith("DDC_") && m.UniqueId.Contains("_H"))
             {
-                // 迁移
-                config.HiddenMonitors.Remove(oldId);
-                config.HiddenMonitors.Add(m.UniqueId);
-                return true;
+                string[] parts = m.UniqueId.Split('_');
+                if (parts.Length >= 4)
+                {
+                    string nameHash = parts[1];
+                    // 尝试索引 0-3（通常不会有超过4个相同型号的显示器）
+                    for (int i = 0; i < 4; i++)
+                    {
+                        string oldId = $"DDC_{nameHash}_IDX_{i}";
+                        if (config.HiddenMonitors.Contains(oldId))
+                        {
+                            // 迁移
+                            config.HiddenMonitors.Remove(oldId);
+                            config.HiddenMonitors.Add(m.UniqueId);
+                            return true;
+                        }
+                    }
+                }
             }
             return false;
         }
@@ -194,18 +217,22 @@ namespace SimpleBrightness
         {
             // 先尝试新ID
             if (config.Curves.TryGetValue(m.UniqueId, out var curve)) return curve;
-            
-            // 尝试旧ID格式 - 从UniqueId中提取原始名称哈希
-            // 新ID格式: DDC_{nameHash}_H{handle}_IDX_{i}
-            // 旧ID格式: DDC_{nameHash}_IDX_{i}
-            if (m.UniqueId.StartsWith("DDC_") && m.UniqueId.Contains("_H")) {
+
+            // 尝试旧ID格式 - 尝试多个可能的索引
+            if (m.UniqueId.StartsWith("DDC_") && m.UniqueId.Contains("_H"))
+            {
                 string[] parts = m.UniqueId.Split('_');
-                if (parts.Length >= 4) {
+                if (parts.Length >= 4)
+                {
                     string nameHash = parts[1];
-                    string oldId = $"DDC_{nameHash}_IDX_{index}";
-                    if (config.Curves.TryGetValue(oldId, out var oldCurve)) {
-                        config.Curves[m.UniqueId] = oldCurve;
-                        return oldCurve;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        string oldId = $"DDC_{nameHash}_IDX_{i}";
+                        if (config.Curves.TryGetValue(oldId, out var oldCurve))
+                        {
+                            config.Curves[m.UniqueId] = oldCurve;
+                            return oldCurve;
+                        }
                     }
                 }
             }
