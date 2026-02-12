@@ -377,20 +377,28 @@ namespace SimpleBrightness
 
         private void ShowUnifiedOsd()
         {
-            if (_unifiedOsd == null || _unifiedOsd.IsDisposed) {
-                var visibleMonitors = new List<MonitorInfo>();
-                int idx = 0;
-                foreach (var m in monitors) {
-                    if (!IsMonitorHidden(m, idx)) visibleMonitors.Add(m);
-                    idx++;
-                }
-                if (visibleMonitors.Count == 0) return;
-                _unifiedOsd = new UnifiedOsdForm(visibleMonitors);
+            // 始终重新计算可见显示器列表，以确保隐藏状态变化被正确反映
+            var visibleMonitors = new List<MonitorInfo>();
+            int idx = 0;
+            foreach (var m in monitors) {
+                if (!IsMonitorHidden(m, idx)) visibleMonitors.Add(m);
+                idx++;
             }
-            
-            if (_unifiedOsd.InvokeRequired) 
+            if (visibleMonitors.Count == 0) return;
+
+            if (_unifiedOsd == null || _unifiedOsd.IsDisposed) {
+                _unifiedOsd = new UnifiedOsdForm(visibleMonitors);
+            } else {
+                // 更新显示器列表（隐藏状态可能已变化）
+                if (_unifiedOsd.InvokeRequired)
+                    _unifiedOsd.Invoke(new Action(() => _unifiedOsd.UpdateMonitors(visibleMonitors)));
+                else
+                    _unifiedOsd.UpdateMonitors(visibleMonitors);
+            }
+
+            if (_unifiedOsd.InvokeRequired)
                 _unifiedOsd.Invoke(new Action(() => _unifiedOsd.UpdateDisplay()));
-            else 
+            else
                 _unifiedOsd.UpdateDisplay();
         }
 

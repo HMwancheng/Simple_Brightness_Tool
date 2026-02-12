@@ -75,14 +75,26 @@ namespace SimpleBrightness
         {
             var screen = Screen.FromPoint(Cursor.Position);
             this.Location = new Point(
-                screen.Bounds.X + (screen.Bounds.Width - Width) / 2, 
+                screen.Bounds.X + (screen.Bounds.Width - Width) / 2,
                 screen.Bounds.Bottom - this.Height - 120
             );
-            
+
             if (!this.Visible) this.Show();
             this.Refresh();
             _timer.Stop();
             _timer.Start();
+        }
+
+        // 更新显示器列表（用于隐藏状态变化后）
+        public void UpdateMonitors(List<MonitorInfo> monitors)
+        {
+            _monitors = monitors;
+            // 重新计算高度
+            int itemHeight = 56;
+            int totalHeight = 20 + (monitors.Count * itemHeight);
+            this.Size = new Size(360, totalHeight);
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18));
+            this.Refresh();
         }
 
         protected override void OnPaint(PaintEventArgs e)
