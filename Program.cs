@@ -881,6 +881,32 @@ namespace SimpleBrightness
         [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam); 
         [DllImport("shell32.dll", SetLastError = true)]
         public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out Rect iconLocation);
+        
+        // Windows 11 DWM APIs
+        [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+        [DllImport("dwmapi.dll")] public static extern int DwmExtendFrameIntoClientArea(IntPtr hWnd, ref Margins pMarInset);
+        
+        // DWM Window Attribute Constants
+        public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+        public const int DWMWA_CAPTION_COLOR = 35;
+        public const int DWMWA_BORDER_COLOR = 34;
+        public const int DWMWA_TEXT_COLOR = 36;
+        
+        // DWM Corner Preference Constants
+        public const int DWMWCP_DEFAULT = 0;
+        public const int DWMWCP_DONOTROUND = 1;
+        public const int DWMWCP_ROUND = 2;
+        public const int DWMWCP_ROUNDSMALL = 3;
+        
+        // DWM System Backdrop Type Constants
+        public const int DWMSBT_AUTO = 0;
+        public const int DWMSBT_NONE = 1;
+        public const int DWMSBT_MAINWINDOW = 2;      // Mica
+        public const int DWMSBT_TRANSIENTWINDOW = 3; // Acrylic
+        public const int DWMSBT_TABBEDWINDOW = 4;    // Tabbed
+        
         [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left; public int top; public int right; public int bottom; } 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } 
         [StructLayout(LayoutKind.Sequential)]
@@ -890,6 +916,41 @@ namespace SimpleBrightness
             public IntPtr hWnd;
             public uint uID;
             public Guid guidItem;
+        }
+        
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Margins
+        {
+            public int cxLeftWidth;
+            public int cxRightWidth;
+            public int cyTopHeight;
+            public int cyBottomHeight;
+        }
+        
+        // Windows 11 Style Helper
+        public static bool IsWindows11() => Environment.OSVersion.Version.Build >= 22000;
+        
+        public static void ApplyWindows11Style(Form form, bool darkMode = true, bool mica = true, int cornerPreference = DWMWCP_ROUND)
+        {
+            if (!IsWindows11()) return;
+            
+            // Apply corner preference
+            int corner = cornerPreference;
+            DwmSetWindowAttribute(form.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
+            
+            // Apply dark mode
+            if (darkMode)
+            {
+                int dark = 1;
+                DwmSetWindowAttribute(form.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+            }
+            
+            // Apply Mica/Acrylic backdrop
+            if (mica)
+            {
+                int backdrop = DWMSBT_MAINWINDOW;
+                DwmSetWindowAttribute(form.Handle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+            }
         }
     }
 }
