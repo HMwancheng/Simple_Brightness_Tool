@@ -798,7 +798,7 @@ namespace SimpleBrightness
         private List<MonitorInfo> _monitors; 
         private AppConfig _config; 
         private MyCustomApplicationContext _context; 
-        private Dictionary<string, TrackBar> _sliders = new Dictionary<string, TrackBar>(); 
+        private Dictionary<string, Win11TrackBar> _sliders = new Dictionary<string, Win11TrackBar>(); 
         private Dictionary<string, Label> _valLabels = new Dictionary<string, Label>(); 
         private FlowLayoutPanel _mainPanel;
         
@@ -939,15 +939,13 @@ namespace SimpleBrightness
                 row1.Controls.Add(lblVal); 
                 card.Controls.Add(row1);
                 
-                // Use native Windows TrackBar for authentic system look
-                TrackBar slider = new TrackBar { 
-                    Size = new Size(450, 45), 
+                // Use custom Win11 style TrackBar
+                Win11TrackBar slider = new Win11TrackBar { 
+                    Size = new Size(450, 32), 
                     Maximum = 100, 
                     Minimum = 0, 
                     Value = m.LastBrightness, 
-                    Margin = new Padding(4, 0, 4, 8),
-                    TickStyle = TickStyle.None,
-                    Cursor = Cursors.Hand
+                    Margin = new Padding(4, 4, 4, 8)
                 }; 
                 _sliders[m.UniqueId] = slider; 
                 

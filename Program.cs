@@ -44,7 +44,7 @@ namespace SimpleBrightness
         private List<MonitorInfo> monitors = new List<MonitorInfo>();
         private AppConfig config;
         private MouseHook mouseHook;
-        private UnifiedOsdForm? _unifiedOsd; 
+        private NativeOsdForm? _osdForm; 
         private bool _isDebugMode = false;
         private IntPtr _trayIconHandle = IntPtr.Zero;
         private uint _trayIconId = 0;
@@ -313,11 +313,11 @@ namespace SimpleBrightness
             
             // 清空显示器列表和OSD，强制重新创建
             monitors.Clear();
-            if (_unifiedOsd != null && !_unifiedOsd.IsDisposed) {
+            if (_osdForm != null && !_osdForm.IsDisposed) {
                 try {
-                    _unifiedOsd.Invoke(new Action(() => _unifiedOsd.Dispose()));
+                    _osdForm.Invoke(new Action(() => _osdForm.Dispose()));
                 } catch { }
-                _unifiedOsd = null;
+                _osdForm = null;
             }
             
             // 重新扫描显示器
@@ -569,20 +569,18 @@ namespace SimpleBrightness
             }
             if (visibleMonitors.Count == 0) return;
 
-            if (_unifiedOsd == null || _unifiedOsd.IsDisposed) {
-                _unifiedOsd = new UnifiedOsdForm(visibleMonitors);
-            } else {
-                // 更新显示器列表（隐藏状态可能已变化）
-                if (_unifiedOsd.InvokeRequired)
-                    _unifiedOsd.Invoke(new Action(() => _unifiedOsd.UpdateMonitors(visibleMonitors)));
-                else
-                    _unifiedOsd.UpdateMonitors(visibleMonitors);
+            if (_osdForm == null || _osdForm.IsDisposed) {
+                _osdForm = new NativeOsdForm(visibleMonitors);
             }
 
-            if (_unifiedOsd.InvokeRequired)
-                _unifiedOsd.Invoke(new Action(() => _unifiedOsd.UpdateDisplay()));
-            else
-                _unifiedOsd.UpdateDisplay();
+            // 显示第一个可见显示器的OSD
+            if (visibleMonitors.Count > 0)
+            {
+                if (_osdForm.InvokeRequired)
+                    _osdForm.Invoke(new Action(() => _osdForm.ShowForMonitor(0)));
+                else
+                    _osdForm.ShowForMonitor(0);
+            }
         }
 
         // 正向插值：软件 -> 硬件 (X -> Y)
