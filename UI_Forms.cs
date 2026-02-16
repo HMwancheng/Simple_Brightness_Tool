@@ -11,63 +11,6 @@ using Microsoft.Win32;
 
 namespace SimpleBrightness
 {
-    // ================== Theme Colors ==================
-    public static class ThemeColors
-    {
-        // 获取系统主题色（Windows强调色）
-        public static Color GetAccentColor()
-        {
-            try
-            {
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM"))
-                {
-                    if (key != null)
-                    {
-                        object value = key.GetValue("AccentColor");
-                        if (value is int colorValue)
-                        {
-                            // Windows存储的是ABGR格式，需要转换为ARGB
-                            byte a = (byte)((colorValue >> 24) & 0xFF);
-                            byte b = (byte)((colorValue >> 16) & 0xFF);
-                            byte g = (byte)((colorValue >> 8) & 0xFF);
-                            byte r = (byte)(colorValue & 0xFF);
-                            return Color.FromArgb(a, r, g, b);
-                        }
-                    }
-                }
-            }
-            catch { }
-            // 默认返回Windows 11默认蓝色
-            return Color.FromArgb(0, 120, 212);
-        }
-        
-        // 根据主题色生成填充色（更淡的版本）
-        public static Color GetFillColor(Color accent)
-        {
-            return Color.FromArgb(
-                Math.Min(255, accent.R + 80),
-                Math.Min(255, accent.G + 80),
-                Math.Min(255, accent.B + 120)
-            );
-        }
-        
-        // 背景色
-        public static Color Background { get; } = Color.FromArgb(40, 40, 40);
-        public static Color BackgroundDark { get; } = Color.FromArgb(35, 35, 38);
-        public static Color CardBackground { get; } = Color.FromArgb(50, 50, 55);
-        public static Color TrackColor { get; } = Color.FromArgb(100, 100, 105);
-        public static Color TextColor { get; } = Color.FromArgb(220, 220, 220);
-        public static Color TextSecondary { get; } = Color.FromArgb(180, 180, 180);
-        
-        // 圆角半径
-        public const int CornerRadiusSmall = 12;
-        public const int CornerRadiusMedium = 16;
-        public const int CornerRadiusLarge = 20;
-        
-        // 轨道高度
-        public const int TrackHeight = 6;
-    }
-
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
@@ -93,300 +36,22 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== Modern Vertical Slider (for Curve Editor) ==================
-    public class ModernVerticalSlider : Panel
-    {
-        private int _value = 50;
-        private int _minimum = 0;
-        private int _maximum = 100;
-        private bool _isDragging = false;
-        private bool _isHovering = false;
-        private Color _accentColor;
-        private Color _fillColor;
-        
-        public Color TrackColor { get; set; }
-        public Color FillColor { get => _fillColor; set => _fillColor = value; }
-        public Color ThumbColor { get; set; } = Color.White;
-        
-        public int Value 
-        { 
-            get => _value; 
-            set 
-            { 
-                _value = Math.Max(_minimum, Math.Min(_maximum, value));
-                Invalidate();
-                ValueChanged?.Invoke(this, EventArgs.Empty);
-            }
-        }
-        
-        public int Minimum { get => _minimum; set { _minimum = value; Invalidate(); } }
-        public int Maximum { get => _maximum; set { _maximum = value; Invalidate(); } }
-        
-        public event EventHandler? ValueChanged;
-        
-        public ModernVerticalSlider()
-        {
-            this.Width = 20;
-            this.DoubleBuffered = true;
-            this.Cursor = Cursors.Hand;
-            _accentColor = ThemeColors.GetAccentColor();
-            _fillColor = ThemeColors.GetFillColor(_accentColor);
-            TrackColor = ThemeColors.TrackColor;
-        }
-        
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            
-            int trackWidth = ThemeColors.TrackHeight; // 使用主题轨道高度
-            int thumbSize = _isHovering || _isDragging ? 14 : 12;
-            int centerX = this.Width / 2;
-            
-            // 计算滑块位置（垂直方向，从上到下）
-            float percent = 1.0f - (float)(_value - _minimum) / (_maximum - _minimum);
-            int thumbY = (int)(percent * (this.Height - thumbSize)) + thumbSize / 2;
-            
-            // 绘制轨道背景
-            using (var trackBrush = new SolidBrush(TrackColor))
-            {
-                var trackRect = new Rectangle(centerX - trackWidth / 2, 0, trackWidth, this.Height);
-                g.FillRectangle(trackBrush, trackRect);
-            }
-            
-            // 绘制填充部分（从底部到滑块位置）
-            using (var fillBrush = new SolidBrush(_fillColor))
-            {
-                var fillRect = new Rectangle(centerX - trackWidth / 2, thumbY, trackWidth, this.Height - thumbY);
-                g.FillRectangle(fillBrush, fillRect);
-            }
-            
-            // 绘制滑块（圆点）
-            var thumbRect = new Rectangle(centerX - thumbSize / 2, thumbY - thumbSize / 2, thumbSize, thumbSize);
-            using (var thumbBrush = new SolidBrush(ThumbColor))
-            {
-                g.FillEllipse(thumbBrush, thumbRect);
-            }
-        }
-        
-        protected override void OnMouseDown(MouseEventArgs e)
-        {
-            base.OnMouseDown(e);
-            if (e.Button == MouseButtons.Left)
-            {
-                _isDragging = true;
-                UpdateValueFromMouse(e.Y);
-            }
-        }
-        
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            base.OnMouseMove(e);
-            _isHovering = true;
-            if (_isDragging)
-            {
-                UpdateValueFromMouse(e.Y);
-            }
-        }
-        
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            if (_isDragging)
-            {
-                _isDragging = false;
-                Invalidate();
-            }
-        }
-        
-        protected override void OnMouseLeave(EventArgs e)
-        {
-            base.OnMouseLeave(e);
-            _isHovering = false;
-            Invalidate();
-        }
-        
-        private void UpdateValueFromMouse(int mouseY)
-        {
-            int thumbSize = 12;
-            float percent = 1.0f - (float)(mouseY - thumbSize / 2) / (this.Height - thumbSize);
-            percent = Math.Max(0, Math.Min(1, percent));
-            int newValue = (int)(_minimum + percent * (_maximum - _minimum));
-            if (newValue != _value)
-            {
-                _value = newValue;
-                Invalidate();
-                ValueChanged?.Invoke(this, EventArgs.Empty);
-            }
-        }
-    }
-
-    // ================== Modern Slider Control ==================
-    public class ModernSlider : Panel
-    {
-        private int _value = 50;
-        private int _minimum = 0;
-        private int _maximum = 100;
-        private bool _isDragging = false;
-        private bool _isHovering = false;
-        private Color _accentColor;
-        private Color _fillColor;
-        
-        // 颜色配置
-        public Color TrackColor { get; set; }
-        public Color FillColor { get => _fillColor; set => _fillColor = value; }
-        public Color ThumbColor { get; set; } = Color.White;
-        public Color ThumbHoverColor { get; set; } = Color.FromArgb(220, 220, 255);
-        
-        public int Value 
-        { 
-            get => _value; 
-            set 
-            { 
-                _value = Math.Max(_minimum, Math.Min(_maximum, value));
-                Invalidate();
-                ValueChanged?.Invoke(this, EventArgs.Empty);
-            }
-        }
-        
-        public int Minimum { get => _minimum; set { _minimum = value; Invalidate(); } }
-        public int Maximum { get => _maximum; set { _maximum = value; Invalidate(); } }
-        
-        public event EventHandler? ValueChanged;
-        public event EventHandler? UserChangedValue;
-        
-        public ModernSlider()
-        {
-            this.Height = 28; // 稍微增加高度以适应更大的轨道
-            this.DoubleBuffered = true;
-            this.Cursor = Cursors.Hand;
-            _accentColor = ThemeColors.GetAccentColor();
-            _fillColor = ThemeColors.GetFillColor(_accentColor);
-            TrackColor = ThemeColors.TrackColor;
-        }
-        
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            
-            int trackHeight = ThemeColors.TrackHeight; // 使用主题轨道高度
-            int thumbSize = _isHovering || _isDragging ? 16 : 14;
-            int centerY = this.Height / 2;
-            
-            // 计算滑块位置
-            float percent = (float)(_value - _minimum) / (_maximum - _minimum);
-            int thumbX = (int)(percent * (this.Width - thumbSize)) + thumbSize / 2;
-            
-            // 绘制轨道背景
-            using (var trackBrush = new SolidBrush(TrackColor))
-            {
-                var trackRect = new Rectangle(0, centerY - trackHeight / 2, this.Width, trackHeight);
-                g.FillRectangle(trackBrush, trackRect);
-            }
-            
-            // 绘制填充部分
-            using (var fillBrush = new SolidBrush(_fillColor))
-            {
-                var fillRect = new Rectangle(0, centerY - trackHeight / 2, thumbX, trackHeight);
-                g.FillRectangle(fillBrush, fillRect);
-            }
-            
-            // 绘制滑块（圆点）
-            var thumbRect = new Rectangle(thumbX - thumbSize / 2, centerY - thumbSize / 2, thumbSize, thumbSize);
-            using (var thumbBrush = new SolidBrush(_isHovering || _isDragging ? ThumbHoverColor : ThumbColor))
-            {
-                g.FillEllipse(thumbBrush, thumbRect);
-            }
-            // 滑块阴影效果
-            using (var shadowPen = new Pen(Color.FromArgb(40, 0, 0, 0), 1))
-            {
-                g.DrawEllipse(shadowPen, thumbRect.X + 1, thumbRect.Y + 1, thumbSize - 2, thumbSize - 2);
-            }
-        }
-        
-        protected override void OnMouseDown(MouseEventArgs e)
-        {
-            base.OnMouseDown(e);
-            if (e.Button == MouseButtons.Left)
-            {
-                _isDragging = true;
-                UpdateValueFromMouse(e.X);
-            }
-        }
-        
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            base.OnMouseMove(e);
-            bool wasHovering = _isHovering;
-            _isHovering = true;
-            if (wasHovering != _isHovering) Invalidate();
-            
-            if (_isDragging)
-            {
-                UpdateValueFromMouse(e.X);
-            }
-        }
-        
-        protected override void OnMouseUp(MouseEventArgs e)
-        {
-            base.OnMouseUp(e);
-            if (_isDragging)
-            {
-                _isDragging = false;
-                UserChangedValue?.Invoke(this, EventArgs.Empty);
-                Invalidate();
-            }
-        }
-        
-        protected override void OnMouseLeave(EventArgs e)
-        {
-            base.OnMouseLeave(e);
-            _isHovering = false;
-            Invalidate();
-        }
-        
-        private void UpdateValueFromMouse(int mouseX)
-        {
-            int thumbSize = 12;
-            float percent = (float)(mouseX - thumbSize / 2) / (this.Width - thumbSize);
-            percent = Math.Max(0, Math.Min(1, percent));
-            int newValue = (int)(_minimum + percent * (_maximum - _minimum));
-            if (newValue != _value)
-            {
-                _value = newValue;
-                Invalidate();
-                ValueChanged?.Invoke(this, EventArgs.Empty);
-            }
-        }
-    }
-
-    // ================== Unified OSD (Modern Style with System Accent Color) ==================
+    // ================== Unified OSD (Windows Native Style - Modified) ==================
     public class UnifiedOsdForm : Form
     {
         private System.Windows.Forms.Timer _timer;
         private List<MonitorInfo> _monitors;
-        private Color _accentColor;
-        private Color _fillColor;
 
-        // 颜色配置 - 使用系统主题色
-        private Color _bgColor; 
-        private Color _borderColor;
-        private Color _textColor;
-        private Color _trackColor;
+        // 颜色配置
+        private readonly Color _bgColor = Color.FromArgb(25, 25, 25); 
+        private readonly Color _borderColor = Color.FromArgb(55, 55, 55);
+        private readonly Color _textColor = Color.FromArgb(221, 221, 221); // #DDDDDD
+        private readonly Color _trackColor = Color.FromArgb(65, 65, 65);   
+        private readonly Color _fillColor = Color.FromArgb(0, 120, 212);   
         
         public UnifiedOsdForm(List<MonitorInfo> monitors)
         {
             _monitors = monitors;
-            _accentColor = ThemeColors.GetAccentColor();
-            _fillColor = ThemeColors.GetFillColor(_accentColor);
-            _bgColor = ThemeColors.Background;
-            _borderColor = Color.FromArgb(70, 70, 75);
-            _textColor = ThemeColors.TextColor;
-            _trackColor = ThemeColors.TrackColor;
-            
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
@@ -394,13 +59,12 @@ namespace SimpleBrightness
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             
-            // 高度计算 - 更紧凑的布局
-            int itemHeight = 40; 
-            int totalHeight = 16 + (monitors.Count * itemHeight);
+            // 高度计算
+            int itemHeight = 56; 
+            int totalHeight = 20 + (monitors.Count * itemHeight);
             
-            this.Size = new Size(300, totalHeight);
-            // 加大圆角
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, ThemeColors.CornerRadiusLarge, ThemeColors.CornerRadiusLarge));
+            this.Size = new Size(360, totalHeight);
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18));
             
             _timer = new System.Windows.Forms.Timer { Interval = 1500 };
             _timer.Tick += (s, e) => this.Hide();
@@ -425,11 +89,13 @@ namespace SimpleBrightness
         // 更新显示器列表（用于隐藏状态变化后）
         public void UpdateMonitors(List<MonitorInfo> monitors)
         {
+            // 直接替换列表引用，确保使用最新的显示器对象
             _monitors = monitors;
-            int itemHeight = 40;
-            int totalHeight = 16 + (monitors.Count * itemHeight);
-            this.Size = new Size(300, totalHeight);
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, ThemeColors.CornerRadiusLarge, ThemeColors.CornerRadiusLarge));
+            // 重新计算高度
+            int itemHeight = 56;
+            int totalHeight = 20 + (monitors.Count * itemHeight);
+            this.Size = new Size(360, totalHeight);
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18));
             this.Invalidate(true);
             this.Refresh();
         }
@@ -449,59 +115,51 @@ namespace SimpleBrightness
                 g.DrawRectangle(borderPen, rect);
             }
 
-            int paddingX = 16;    
-            int itemH = 40;       
-            int startY = 8;      
-            int iconSize = 16;
-            int valWidth = 32;   // 数值宽度
-            int spacing = 12;    // 图标与轨道、轨道与文字的间距相等
+            int paddingX = 20;    
+            int itemH = 56;       
+            int startY = 10;      
             
-            // 计算轨道位置：使图标、轨道、文字间距相等
-            int iconX = paddingX;
-            int barLeft = iconX + iconSize + spacing;
-            int barRight = this.Width - paddingX - valWidth - spacing;
-            int barWidth = barRight - barLeft;
-            int barHeight = ThemeColors.TrackHeight;
-            
-            using (Font iconFont = new Font("Segoe MDL2 Assets", 11f))
-            // 亮度值：缩小两个字号(11->9)并加粗
+            // 字体 9f Bold, 数值颜色 Cyan
+            using (Font nameFont = new Font("Segoe UI", 9f, FontStyle.Bold)) 
             using (Font valFont = new Font("Segoe UI", 9f, FontStyle.Bold))
             using (Brush textBrush = new SolidBrush(_textColor))
-            using (Brush valBrush = new SolidBrush(_textColor))
+            using (Brush valBrush = new SolidBrush(Color.Cyan)) 
             using (Brush trackBrush = new SolidBrush(_trackColor))
             using (Brush fillBrush = new SolidBrush(_fillColor))
+            using (StringFormat alignLeft = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near, Trimming = StringTrimming.EllipsisCharacter })
             using (StringFormat alignRight = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Far })
             {
                 int currentY = startY;
 
                 foreach (var m in _monitors)
                 {
-                    int iconY = currentY + (itemH - iconSize) / 2;
+                    // 布局计算
+                    Rectangle nameRect = new Rectangle(paddingX, currentY, 110, itemH);
+                    Rectangle valRect = new Rectangle(this.Width - paddingX - 45, currentY, 45, itemH);
+                    
+                    int barLeft = nameRect.Right + 5;
+                    int barRight = valRect.Left - 5;
+                    int barWidth = barRight - barLeft;
+                    int barHeight = 6; 
                     int barTop = currentY + (itemH - barHeight) / 2;
 
-                    // 绘制亮度图标 - 使用小太阳图标 \uE706 旁边的小图标 \uE9A1 (小太阳光线较短)
-                    // 使用 \uE706 的替代图标 \uE9A1 或者保持 \uE706 但调整大小
-                    g.DrawString("\uE706", iconFont, textBrush, iconX, iconY);
+                    // 绘制名称
+                    g.DrawString(m.Name, nameFont, textBrush, nameRect, alignLeft);
 
                     // 绘制进度条背景
                     FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
 
-                    // 计算填充宽度
-                    float percent = m.LastBrightness / 100.0f;
-                    int fillW = (int)(barWidth * percent);
-                    if (fillW < 0) fillW = 0; 
+                    // 绘制进度条前景
+                    int fillW = (int)(barWidth * (m.LastBrightness / 100.0f));
+                    if (fillW < barHeight) fillW = (m.LastBrightness > 0) ? barHeight : 0; 
                     if (fillW > barWidth) fillW = barWidth;
 
-                    // 绘制进度条填充
                     if (fillW > 0)
                     {
                         FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
                     }
 
-                    // 移除圆点滑块，只显示进度条
-
-                    // 绘制数值 - 位置调整使间距相等
-                    Rectangle valRect = new Rectangle(barRight + spacing, currentY, valWidth, itemH);
+                    // 绘制数值
                     g.DrawString(m.LastBrightness.ToString(), valFont, valBrush, valRect, alignRight);
 
                     currentY += itemH;
@@ -610,7 +268,7 @@ namespace SimpleBrightness
 
     public class BrightnessForm : Form
     {
-        private List<MonitorInfo> _monitors; private AppConfig _config; private MyCustomApplicationContext _context; private Dictionary<string, ModernSlider> _sliders = new Dictionary<string, ModernSlider>(); private Dictionary<string, Label> _valLabels = new Dictionary<string, Label>(); private FlowLayoutPanel _mainPanel;
+        private List<MonitorInfo> _monitors; private AppConfig _config; private MyCustomApplicationContext _context; private Dictionary<string, TrackBar> _sliders = new Dictionary<string, TrackBar>(); private Dictionary<string, Label> _valLabels = new Dictionary<string, Label>(); private FlowLayoutPanel _mainPanel;
         
         // 检查显示器是否被隐藏，支持新旧ID格式兼容
         private bool IsMonitorHidden(MonitorInfo m, int index) {
@@ -648,30 +306,10 @@ namespace SimpleBrightness
         }
         
         public BrightnessForm(List<MonitorInfo> monitors, AppConfig config, MyCustomApplicationContext context, ContextMenuStrip menu) {
-            _monitors = monitors; _config = config; _context = context; 
-            this.FormBorderStyle = FormBorderStyle.None; 
-            this.ShowInTaskbar = false; 
-            this.BackColor = ThemeColors.Background; 
-            this.StartPosition = FormStartPosition.Manual; 
-            this.TopMost = true; 
-            this.AutoSize = true; 
-            this.AutoSizeMode = AutoSizeMode.GrowAndShrink; 
-            this.Padding = new Padding(0);
-            
+            _monitors = monitors; _config = config; _context = context; this.FormBorderStyle = FormBorderStyle.None; this.ShowInTaskbar = false; this.BackColor = Color.FromArgb(31, 31, 31); this.StartPosition = FormStartPosition.Manual; this.TopMost = true; this.AutoSize = true; this.AutoSizeMode = AutoSizeMode.GrowAndShrink; this.Padding = new Padding(2);
             this.Deactivate += (s, e) => { if (Application.OpenForms.OfType<CurveEditorForm>().Any() || Application.OpenForms.OfType<SettingsForm>().Any() || Application.OpenForms.OfType<InputBox>().Any() || Application.OpenForms.OfType<HelpForm>().Any()) return; if (!this.Bounds.Contains(Cursor.Position)) this.Hide(); else this.Activate(); };
-            
-            _mainPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(24), BackColor = ThemeColors.Background, MaximumSize = new Size(500, 2000) }; 
-            this.Controls.Add(_mainPanel);
-            
-            Panel header = new Panel { Size = new Size(400, 44), Margin = new Padding(0, 0, 0, 20) }; 
-            Label title = new Label { Text = "Control Center", Location = new Point(0, 6), ForeColor = Color.White, Font = new Font("Segoe UI", 18, FontStyle.Bold), AutoSize = true }; 
-            Button btnMenu = new Button { Text = "\uE712", Location = new Point(368, 4), Size = new Size(32, 32), FlatStyle = FlatStyle.Flat, ForeColor = ThemeColors.TextSecondary, Cursor = Cursors.Hand, BackColor = Color.Transparent, Font = new Font("Segoe MDL2 Assets", 12) }; 
-            btnMenu.FlatAppearance.BorderSize = 0; 
-            btnMenu.Click += (s, e) => menu.Show(Cursor.Position); 
-            header.Controls.Add(title); 
-            header.Controls.Add(btnMenu); 
-            _mainPanel.Controls.Add(header);
-            
+            _mainPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(10), BackColor = Color.FromArgb(31, 31, 31), MaximumSize = new Size(500, 2000) }; this.Controls.Add(_mainPanel);
+            Panel header = new Panel { Size = new Size(450, 50), Margin = new Padding(0, 0, 0, 5) }; Label title = new Label { Text = "Control Center", Location = new Point(5, 10), ForeColor = Color.White, Font = new Font("Segoe UI", 14, FontStyle.Bold), AutoSize = true }; Button btnMenu = new Button { Text = "☰", Location = new Point(410, 5), Size = new Size(35, 35), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, Cursor = Cursors.Hand }; btnMenu.FlatAppearance.BorderSize = 0; btnMenu.Click += (s, e) => menu.Show(Cursor.Position); header.Controls.Add(title); header.Controls.Add(btnMenu); _mainPanel.Controls.Add(header);
             var visibleMonitors = new List<MonitorInfo>();
             int idx = 0;
             foreach (var m in _monitors) {
@@ -679,98 +317,52 @@ namespace SimpleBrightness
                 idx++;
             }
             if (visibleMonitors.Count == 0) visibleMonitors = _monitors; 
-            
             foreach (var m in visibleMonitors) {
-                // 显示器卡片容器
-                FlowLayoutPanel card = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Width = 400, Padding = new Padding(0, 12, 0, 12), Margin = new Padding(0, 0, 0, 16) };
-                
-                // 第一行：图标 + 名称 + 亮度值
-                Panel row1 = new Panel { Size = new Size(400, 28), Margin = new Padding(0, 0, 0, 10) };
-                // 显示器图标
-                Label lblIcon = new Label { Text = "\uE7F4", Location = new Point(0, 2), ForeColor = ThemeColors.TextColor, AutoSize = true, Font = new Font("Segoe MDL2 Assets", 14) };
-                // 名称 - 缩小两个字号(11->9)并加粗
-                Label lblName = new Label { Text = m.Name, Location = new Point(26, 4), ForeColor = ThemeColors.TextColor, AutoSize = true, Font = new Font("Segoe UI", 9, FontStyle.Bold), Cursor = Cursors.Hand, MaximumSize = new Size(300, 30) }; 
-                SetupNameMenu(lblName, m);
-                // 亮度值 - 缩小两个字号(12->10)并加粗
-                Label lblVal = new Label { Text = $"{m.LastBrightness}", Location = new Point(360, 4), ForeColor = ThemeColors.TextColor, AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold) }; 
-                _valLabels[m.UniqueId] = lblVal;
-                row1.Controls.Add(lblIcon); 
-                row1.Controls.Add(lblName); 
-                row1.Controls.Add(lblVal); 
-                card.Controls.Add(row1);
-                
-                // 第二行：亮度图标 + 滑块
-                Panel row2 = new Panel { Size = new Size(400, 32), Margin = new Padding(0, 0, 0, 5) };
-                Label brightnessIcon = new Label { Text = "\uE706", Location = new Point(0, 4), ForeColor = ThemeColors.TextSecondary, AutoSize = true, Font = new Font("Segoe MDL2 Assets", 12) };
-                ModernSlider slider = new ModernSlider { Size = new Size(360, 28), Location = new Point(30, 0), Value = m.LastBrightness }; 
-                _sliders[m.UniqueId] = slider;
-                Action<int> updateLogic = (newVal) => { lblVal.Text = $"{newVal}"; _context.ApplyBrightness(m, newVal, false); };
-                slider.ValueChanged += (s, e) => updateLogic(slider.Value);
-                slider.UserChangedValue += (s, e) => { };
-                row2.Controls.Add(brightnessIcon); 
-                row2.Controls.Add(slider); 
-                card.Controls.Add(row2);
-                
-                // 按钮行（仅DDC显示器）
+                FlowLayoutPanel card = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Width = 450, Padding = new Padding(0, 5, 0, 10), Margin = new Padding(0, 0, 0, 10) };
+                Panel row1 = new Panel { Size = new Size(440, 30), Margin = new Padding(5, 0, 5, 5) }; Label lblName = new Label { Text = m.Name, Location = new Point(0, 0), ForeColor = Color.LightGray, AutoSize = true, Font = new Font("Segoe UI", 10), Cursor = Cursors.Hand, MaximumSize = new Size(350, 30) }; SetupNameMenu(lblName, m); Label lblVal = new Label { Text = $"{m.LastBrightness}%", Location = new Point(380, 0), ForeColor = Color.Cyan, AutoSize = true, Font = new Font("Segoe UI", 11, FontStyle.Bold) }; _valLabels[m.UniqueId] = lblVal; row1.Controls.Add(lblName); row1.Controls.Add(lblVal); card.Controls.Add(row1);
+                TrackBar slider = new TrackBar { Size = new Size(440, 45), Maximum = 100, Minimum = 0, Value = m.LastBrightness, TickStyle = TickStyle.None, Cursor = Cursors.Hand, Margin = new Padding(0) }; _sliders[m.UniqueId] = slider; Action<int> updateLogic = (newVal) => { lblVal.Text = $"{newVal}%"; _context.ApplyBrightness(m, newVal, false); }; slider.Scroll += (s, e) => updateLogic(slider.Value); slider.MouseWheel += (s, e) => { int change = e.Delta > 0 ? _config.ScrollStep : -_config.ScrollStep; slider.Value = Math.Clamp(slider.Value + change, 0, 100); updateLogic(slider.Value); ((HandledMouseEventArgs)e).Handled = true; }; card.Controls.Add(slider);
                 if (m.Type == MonitorType.DDC) { 
-                    Panel btnRow = new Panel { Size = new Size(400, 36), Margin = new Padding(0, 8, 0, 0) }; 
-                    // 编辑曲线按钮（图标按钮）
-                    Button btnCurve = new Button { Text = "\uE70F", Location = new Point(320, 2), Size = new Size(32, 32), FlatStyle = FlatStyle.Flat, ForeColor = ThemeColors.TextSecondary, BackColor = Color.Transparent, Cursor = Cursors.Hand, Font = new Font("Segoe MDL2 Assets", 12) };
-                    btnCurve.FlatAppearance.BorderSize = 0;
-                    ToolTip tipCurve = new ToolTip(); 
-                    tipCurve.SetToolTip(btnCurve, "编辑曲线");
+                    FlowLayoutPanel btnRow = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(10, 5, 0, 0) }; 
+                    Button btnCurve = CreateModernButton("编辑曲线", 110); 
                     btnCurve.Click += (s, e) => { var editor = new CurveEditorForm(m, _config); editor.Show(this); }; 
-                    // 电源按钮（图标按钮）
-                    Button btnPower = new Button { Text = "\uE7E8", Location = new Point(360, 2), Size = new Size(32, 32), FlatStyle = FlatStyle.Flat, ForeColor = ThemeColors.TextSecondary, BackColor = Color.Transparent, Cursor = Cursors.Hand, Font = new Font("Segoe MDL2 Assets", 12) };
-                    btnPower.FlatAppearance.BorderSize = 0;
-                    ToolTip tipPower = new ToolTip(); 
-                    tipPower.SetToolTip(btnPower, "左键：开启\n右键：关闭");
-                    btnPower.MouseDown += (s, e) => { Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.UseSoftwarePower)); }; 
                     btnRow.Controls.Add(btnCurve); 
+                    Button btnPower = CreateModernButton("⏻ 电源", 90); 
+                    btnPower.ForeColor = Color.LightGreen; 
+                    btnPower.MouseDown += (s, e) => { Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.UseSoftwarePower)); }; 
+                    ToolTip tip = new ToolTip(); tip.SetToolTip(btnPower, "左键：开启 (On)\n右键：关闭 (Off)");
                     btnRow.Controls.Add(btnPower); 
                     card.Controls.Add(btnRow); 
                 }
-                
-                if (m != visibleMonitors.Last()) { 
-                    Panel div = new Panel { Size = new Size(400, 1), BackColor = Color.FromArgb(60, 60, 60), Margin = new Padding(0, 12, 0, 0) }; 
-                    card.Controls.Add(div); 
-                }
-                _mainPanel.Controls.Add(card);
+                if (m != visibleMonitors.Last()) { Panel div = new Panel { Size = new Size(440, 1), BackColor = Color.FromArgb(50, 50, 50), Margin = new Padding(5, 15, 5, 0) }; card.Controls.Add(div); } _mainPanel.Controls.Add(card);
             }
         }
-        
-        protected override void OnLoad(EventArgs e) { 
-            base.OnLoad(e); 
-            var screen = Screen.FromPoint(Cursor.Position); 
-            int x = screen.WorkingArea.Right - this.Width - 12; 
-            int y = screen.WorkingArea.Bottom - this.Height - 12; 
-            if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + 50; 
-            if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + 10; 
-            this.Location = new Point(x, y); 
-            // 加大圆角
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, ThemeColors.CornerRadiusMedium, ThemeColors.CornerRadiusMedium)); 
-        }
+        protected override void OnLoad(EventArgs e) { base.OnLoad(e); var screen = Screen.FromPoint(Cursor.Position); int x = screen.WorkingArea.Right - this.Width - 2; int y = screen.WorkingArea.Bottom - this.Height - 2; if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + 50; if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + 10; this.Location = new Point(x, y); this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 18, 18)); }
         private void SetupNameMenu(Label lbl, MonitorInfo m) { ContextMenuStrip menu = new ContextMenuStrip(); menu.Items.Add("重命名", null, (s, e) => { InputBox input = new InputBox("重命名", "输入新名称:", m.Name); if (input.ShowDialog() == DialogResult.OK) { _config.CustomNames[m.UniqueId] = input.ResultText; _config.Save(); _context.RefreshMonitors(); this.Close(); } }); menu.Items.Add("隐藏", null, (s, e) => { _config.HiddenMonitors.Add(m.UniqueId); _config.Save(); this.Close(); }); lbl.MouseClick += (s, e) => { if (e.Button == MouseButtons.Right) menu.Show(Cursor.Position); }; }
+        private Button CreateModernButton(string text, int width) { return new Button { Text = text, Size = new Size(width, 38), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = Color.FromArgb(50, 50, 50), Cursor = Cursors.Hand, Font = new Font("Segoe UI", 9), Margin = new Padding(0, 0, 10, 0) }; }
         public void UpdateSlider(string id, int val) { 
             // 先尝试通过ID匹配
             if (_sliders.ContainsKey(id)) { 
                 _sliders[id].Value = val; 
-                _valLabels[id].Text = val.ToString(); 
+                _valLabels[id].Text = val + "%"; 
                 return;
             }
             // 如果ID不匹配（可能是句柄变化导致的新ID），尝试通过索引匹配
+            // 遍历当前所有显示器，找到ID对应的索引位置
             var allMonitors = _context.GetMonitors();
             for (int i = 0; i < allMonitors.Count; i++) {
                 if (allMonitors[i].UniqueId == id) {
+                    // 找到匹配的显示器，更新对应索引位置的滑块
+                    // 注意：需要考虑隐藏显示器的情况
                     int visibleIndex = 0;
                     for (int j = 0; j < allMonitors.Count && j <= i; j++) {
                         if (!IsMonitorHidden(allMonitors[j], j)) {
                             if (j == i) {
+                                // 找到可见显示器的索引
                                 var sliderKeys = _sliders.Keys.ToList();
                                 if (visibleIndex < sliderKeys.Count) {
                                     string key = sliderKeys[visibleIndex];
                                     _sliders[key].Value = val;
-                                    _valLabels[key].Text = val.ToString();
+                                    _valLabels[key].Text = val + "%";
                                 }
                                 return;
                             }
@@ -827,39 +419,16 @@ namespace SimpleBrightness
         
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
             _monitor = monitor; _config = config; _currentPoints = new Dictionary<int, int>(GetCurveWithFallback());
-            var accentColor = ThemeColors.GetAccentColor();
-            
-            this.Size = new Size(800, 480); 
-            this.BackColor = ThemeColors.Background; 
-            this.StartPosition = FormStartPosition.CenterScreen; 
-            this.Text = "曲线编辑器";
-            this.FormBorderStyle = FormBorderStyle.None;
-            // 加大圆角
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, ThemeColors.CornerRadiusMedium, ThemeColors.CornerRadiusMedium));
-            
-            // 顶部标题栏
-            Panel top = new Panel { Dock = DockStyle.Top, Height = 56, BackColor = ThemeColors.BackgroundDark };
-            Label title = new Label { Text = $"编辑曲线: {monitor.Name}", Location = new Point(20, 16), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 13, FontStyle.Bold) };
-            
-            // 关闭按钮（图标）
-            Button btnClose = new Button { Text = "\uE711", Location = new Point(Width - 50, 12), Size = new Size(32, 32), FlatStyle = FlatStyle.Flat, ForeColor = ThemeColors.TextSecondary, BackColor = Color.Transparent, Cursor = Cursors.Hand, Font = new Font("Segoe MDL2 Assets", 12) };
-            btnClose.FlatAppearance.BorderSize = 0;
-            btnClose.Click += (s, e) => this.Close();
-            
-            top.Controls.AddRange(new Control[] { title, btnClose });
-            this.Controls.Add(top);
-            
-            // 底部工具栏
-            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 70, BackColor = ThemeColors.BackgroundDark };
-            NumericUpDown num = new NumericUpDown { Value = 50, Width = 70, Location = new Point(20, 20), Font = new Font("Segoe UI", 11), BackColor = Color.FromArgb(50, 50, 50), ForeColor = Color.White, BorderStyle = BorderStyle.None };
-            Button add = new Button { Text = "\uE710 添加", Width = 100, Height = 36, Location = new Point(100, 17), BackColor = Color.FromArgb(60, 60, 65), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10) };
-            add.FlatAppearance.BorderSize = 0;
-            Button save = new Button { Text = "\uE73E 保存", Width = 100, Height = 36, Location = new Point(Width - 130, 17), BackColor = accentColor, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10) };
-            save.FlatAppearance.BorderSize = 0;
-            
+            this.Size = new Size(850, 500); this.BackColor = Color.FromArgb(31, 31, 31); this.StartPosition = FormStartPosition.CenterScreen; this.Text = "Curve Editor";
+            Panel top = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.FromArgb(25, 25, 25) };
+            Label title = new Label { Text = $"编辑: {monitor.Name}", Location = new Point(15, 18), AutoSize = true, ForeColor = Color.White, Font = new Font("Segoe UI", 12, FontStyle.Bold) };
+            NumericUpDown num = new NumericUpDown { Value = 50, Width = 80, Location = new Point(350, 13), Font = new Font("Segoe UI", 10) };
+            Button add = new Button { Text = "添加节点", Width = 110, Height = 34, Location = new Point(440, 13), BackColor = Color.Gray, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            Button save = new Button { Text = "保存并生效", Width = 120, Height = 34, Location = new Point(700, 13), BackColor = Color.Teal, ForeColor = Color.White, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat };
             add.Click += (s, e) => { int x = (int)num.Value; if (!_currentPoints.ContainsKey(x)) { _currentPoints[x] = x; RefreshSliders(); }};
             save.Click += (s, e) => { 
                 _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); 
+                // 清理旧ID的曲线配置（如果存在）
                 if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
                     string[] parts = _monitor.UniqueId.Split('_');
                     if (parts.Length >= 4) {
@@ -872,44 +441,32 @@ namespace SimpleBrightness
                 _config.Save(); 
                 this.Close(); 
             };
-            bottom.Controls.AddRange(new Control[] { num, add, save });
-            this.Controls.Add(bottom);
-            
-            _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 15, 0, 0), BackColor = ThemeColors.Background };
+            top.Controls.AddRange(new Control[] { title, num, add, save });
+            this.Controls.Add(top);
+            _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 10, 0, 0) };
             this.Controls.Add(_panel); 
             _panel.BringToFront();
             RefreshSliders();
-            
-            // 支持拖动标题栏移动窗口
-            top.MouseDown += (s, e) => { if (e.Button == MouseButtons.Left) { this.Capture = false; NativeMethods.SendMessage(this.Handle, 0xA1, 0x2, 0); } };
         }
         private void RefreshSliders() { _panel.Controls.Clear(); if (!_currentPoints.ContainsKey(0)) _currentPoints[0]=0; if(!_currentPoints.ContainsKey(100)) _currentPoints[100]=100; foreach(var k in _currentPoints.Keys.OrderBy(x=>x)) _panel.Controls.Add(CreateItem(k, _currentPoints[k])); }
         private Control CreateItem(int x, int y) { 
-             Panel p = new Panel { Width = 64, Height = 280, Margin = new Padding(6), BackColor = Color.FromArgb(50, 50, 55) };
-             p.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, p.Width, p.Height, 8, 8));
-             
-             // 实际亮度值（顶部）
-             Label l = new Label { Text = y.ToString(), Top = 10, Width = 64, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(180, 180, 255), Font = new Font("Segoe UI", 12, FontStyle.Bold) };
-             
-             int panelH = 280; int labelH = 24; int btnH = 28; 
-             // 软件亮度值（底部）
-             Label k = new Label { Text = x + "%", Top = panelH - labelH - btnH - 8, Width = 64, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(200, 200, 200), Font = new Font("Segoe UI", 10) };
-             
+             Panel p = new Panel { Width = 70, Height = 320, Margin = new Padding(8), BackColor = Color.FromArgb(45,45,45) };
+             Label l = new Label { Text = y.ToString(), Top = 5, Width = 70, Height = 25, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Cyan, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
+             int panelH = 320; int labelH = 20; int btnH = 20; 
+             Label k = new Label { Text = x + "%", Top = panelH - labelH - btnH - 5, Width = 70, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = new Font("Segoe UI", 9) };
              Control bottomCtrl;
              if (x != 0 && x != 100) {
-                 Button d = new Button { Text = "\uE74D", Top = panelH - btnH - 5, Left = 18, Width = 28, Height = 28, ForeColor = Color.FromArgb(255, 100, 100), FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent, Font = new Font("Segoe MDL2 Assets", 10) }; d.FlatAppearance.BorderSize = 0;
+                 Button d = new Button { Text = "×", Top = panelH - btnH - 5, Left = 20, Width = 30, Height = 20, ForeColor = Color.Red, FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent }; d.FlatAppearance.BorderSize = 0;
                  d.Click += (s, e) => { _currentPoints.Remove(x); RefreshSliders(); }; bottomCtrl = d;
              } else {
-                 Label lockLbl = new Label { Text = "\uE72E", Top = panelH - btnH - 5, Width = 64, Height = 28, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(120, 120, 120), Font = new Font("Segoe MDL2 Assets", 10) };
+                 Label lockLbl = new Label { Text = "🔒", Top = panelH - btnH - 5, Width = 70, Height = 20, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gray, Font = new Font("Segoe UI", 8) };
                  bottomCtrl = lockLbl;
              }
-             
-             // 使用自定义垂直滑块
-             int sliderTop = 40; int sliderH = (panelH - labelH - btnH - 8) - sliderTop - 8;
-             ModernVerticalSlider t = new ModernVerticalSlider { Height = sliderH, Value = y, Top = sliderTop, Left = 22, Width = 20 };
+             int sliderTop = 35; int sliderH = (panelH - labelH - btnH - 5) - sliderTop - 5;
+             TrackBar t = new TrackBar { Orientation = Orientation.Vertical, Minimum = 0, Maximum = 100, Value = y, Top = sliderTop, Height = sliderH, Width = 45, Left = 12, TickStyle = TickStyle.None };
              ToolTip tip = new ToolTip(); 
-             t.ValueChanged += (s, e) => { _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); };
-             
+             t.Scroll += (s, e) => { _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); tip.SetToolTip(t, t.Value.ToString()); };
+             t.MouseWheel += (s, e) => { int change = e.Delta > 0 ? 1 : -1; t.Value = Math.Clamp(t.Value + change, 0, 100); _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); ((HandledMouseEventArgs)e).Handled = true; };
              p.Controls.AddRange(new Control[]{l, t, k, bottomCtrl}); 
              return p;
         }
