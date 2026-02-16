@@ -850,7 +850,7 @@ namespace SimpleBrightness
                     Location = new Point(390, 4), 
                     ForeColor = Color.FromArgb(0, 160, 255), 
                     AutoSize = true, 
-                    Font = new Font("Segoe UI Variable Text", 12, FontStyle.SemiBold) 
+                    Font = new Font("Segoe UI Variable Text", 12, FontStyle.Bold) 
                 }; 
                 _valLabels[m.UniqueId] = lblVal; 
                 row1.Controls.Add(lblName); 
