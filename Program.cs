@@ -25,6 +25,9 @@ namespace SimpleBrightness
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            // Auto-detect system theme
+            ThemeManager.AutoDetectTheme();
+
             using (Mutex mutex = new Mutex(false, "Global\\" + "HMSimpleBrightness_v40_Split_Fixed"))
             {
                 if (!mutex.WaitOne(0, false)) return;

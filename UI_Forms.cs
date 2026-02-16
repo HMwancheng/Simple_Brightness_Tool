@@ -11,10 +11,41 @@ using Microsoft.Win32;
 
 namespace SimpleBrightness
 {
-    // ================== Theme Manager ==================
+    // ================== Theme Manager (Auto-detect System Theme) ==================
     public static class ThemeManager
     {
-        public static bool IsDarkMode { get; set; } = true;
+        private static bool _isDarkMode = true;
+        
+        public static bool IsDarkMode 
+        { 
+            get => _isDarkMode;
+            set => _isDarkMode = value;
+        }
+        
+        // Auto-detect system theme from Windows registry
+        public static void AutoDetectTheme()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    if (key != null)
+                    {
+                        var value = key.GetValue("AppsUseLightTheme");
+                        if (value is int lightTheme)
+                        {
+                            // AppsUseLightTheme = 0 means dark mode, 1 means light mode
+                            _isDarkMode = lightTheme == 0;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Default to dark mode if detection fails
+                _isDarkMode = true;
+            }
+        }
         
         // Dark Mode Colors
         public static class Dark
@@ -26,6 +57,7 @@ namespace SimpleBrightness
             public static readonly Color Accent = Color.FromArgb(0, 120, 212);
             public static readonly Color Track = Color.FromArgb(80, 80, 80);
             public static readonly Color Border = Color.FromArgb(60, 60, 60);
+            public static readonly Color Thumb = Color.FromArgb(200, 200, 200);
         }
         
         // Light Mode Colors
@@ -38,6 +70,7 @@ namespace SimpleBrightness
             public static readonly Color Accent = Color.FromArgb(0, 95, 184);
             public static readonly Color Track = Color.FromArgb(200, 200, 200);
             public static readonly Color Border = Color.FromArgb(200, 200, 200);
+            public static readonly Color Thumb = Color.FromArgb(100, 100, 100);
         }
         
         public static Color Background => IsDarkMode ? Dark.Background : Light.Background;
@@ -47,6 +80,7 @@ namespace SimpleBrightness
         public static Color Accent => IsDarkMode ? Dark.Accent : Light.Accent;
         public static Color Track => IsDarkMode ? Dark.Track : Light.Track;
         public static Color Border => IsDarkMode ? Dark.Border : Light.Border;
+        public static Color Thumb => IsDarkMode ? Dark.Thumb : Light.Thumb;
     }
 
     // ================== Windows 11 Style Helper ==================
@@ -63,16 +97,8 @@ namespace SimpleBrightness
             NativeMethods.DwmSetWindowAttribute(form.Handle, 33, ref corner, sizeof(int));
             
             // Apply dark mode
-            if (darkMode)
-            {
-                int dark = 1;
-                NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
-            }
-            else
-            {
-                int dark = 0;
-                NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
-            }
+            int dark = darkMode ? 1 : 0;
+            NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
             
             // Apply Mica backdrop
             if (mica)
@@ -89,30 +115,16 @@ namespace SimpleBrightness
             int corner = 2;
             NativeMethods.DwmSetWindowAttribute(form.Handle, 33, ref corner, sizeof(int));
             
-            if (darkMode)
-            {
-                int dark = 1;
-                NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
-            }
-            else
-            {
-                int dark = 0;
-                NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
-            }
+            int dark = darkMode ? 1 : 0;
+            NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
             
             // Acrylic backdrop
             int backdrop = 3; // DWMSBT_TRANSIENTWINDOW
             NativeMethods.DwmSetWindowAttribute(form.Handle, 38, ref backdrop, sizeof(int));
         }
-        
-        // Apply semi-transparent background (for non-Windows 11)
-        public static void ApplySemiTransparent(Form form, int opacity = 240)
-        {
-            form.Opacity = opacity / 255.0;
-        }
     }
     
-    // ================== Windows 11 Style TrackBar ==================
+    // ================== Native Windows Style TrackBar (Matching System) ==================
     public class Win11TrackBar : Control
     {
         private int _value = 50;
@@ -121,8 +133,8 @@ namespace SimpleBrightness
         private bool _isDragging = false;
         private Rectangle _trackRect;
         private Rectangle _thumbRect;
-        private const int ThumbSize = 20;
-        private const int TrackHeight = 4;
+        private const int ThumbSize = 16; // Smaller thumb like Windows
+        private const int TrackHeight = 3; // Thinner track
         
         public event EventHandler? ValueChanged;
         public event EventHandler? Scroll;
@@ -159,7 +171,7 @@ namespace SimpleBrightness
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            Height = 32;
+            Height = 28;
             Cursor = Cursors.Hand;
         }
         
@@ -171,11 +183,11 @@ namespace SimpleBrightness
         
         private void UpdateThumbPosition()
         {
-            int trackWidth = Width - ThumbSize - 4;
+            int trackWidth = Width - ThumbSize - 8;
             float ratio = _maximum > _minimum ? (float)(_value - _minimum) / (_maximum - _minimum) : 0;
-            int thumbX = (int)(2 + (ThumbSize / 2) + ratio * trackWidth - (ThumbSize / 2));
+            int thumbX = (int)(4 + ratio * trackWidth);
             _thumbRect = new Rectangle(thumbX, (Height - ThumbSize) / 2, ThumbSize, ThumbSize);
-            _trackRect = new Rectangle(2 + ThumbSize / 2, (Height - TrackHeight) / 2, trackWidth, TrackHeight);
+            _trackRect = new Rectangle(4, (Height - TrackHeight) / 2, Width - 8, TrackHeight);
         }
         
         protected override void OnPaint(PaintEventArgs e)
@@ -187,14 +199,14 @@ namespace SimpleBrightness
             
             UpdateThumbPosition();
             
-            // Draw track background
+            // Draw track background (gray)
             using (var trackBrush = new SolidBrush(ThemeManager.Track))
             using (var trackPath = GetRoundedRect(_trackRect, TrackHeight / 2))
             {
                 g.FillPath(trackBrush, trackPath);
             }
             
-            // Draw track fill
+            // Draw track fill (accent color)
             if (_value > _minimum)
             {
                 int fillWidth = (int)((float)(_value - _minimum) / (_maximum - _minimum) * _trackRect.Width);
@@ -206,24 +218,33 @@ namespace SimpleBrightness
                 }
             }
             
-            // Draw thumb
-            Color thumbColor = _isDragging ? Color.FromArgb(220, 220, 220) : 
-                               ClientRectangle.Contains(PointToClient(Cursor.Position)) ? Color.FromArgb(240, 240, 240) : Color.White;
+            // Draw thumb (circle with border)
+            bool isHovering = ClientRectangle.Contains(PointToClient(Cursor.Position));
+            Color thumbColor = _isDragging ? ThemeManager.Accent : 
+                              isHovering ? ThemeManager.Thumb : ThemeManager.Thumb;
             
+            // Draw thumb shadow
+            using (var shadowBrush = new SolidBrush(Color.FromArgb(40, 0, 0, 0)))
+            {
+                var shadowRect = new Rectangle(_thumbRect.X + 1, _thumbRect.Y + 2, _thumbRect.Width, _thumbRect.Height);
+                using (var shadowPath = GetCirclePath(shadowRect))
+                {
+                    g.FillPath(shadowBrush, shadowPath);
+                }
+            }
+            
+            // Draw thumb
             using (var thumbBrush = new SolidBrush(thumbColor))
             using (var thumbPath = GetCirclePath(_thumbRect))
             {
-                // Draw subtle shadow
-                using (var shadowBrush = new SolidBrush(Color.FromArgb(30, 0, 0, 0)))
-                {
-                    var shadowRect = new Rectangle(_thumbRect.X + 1, _thumbRect.Y + 2, _thumbRect.Width, _thumbRect.Height);
-                    using (var shadowPath = GetCirclePath(shadowRect))
-                    {
-                        g.FillPath(shadowBrush, shadowPath);
-                    }
-                }
-                
                 g.FillPath(thumbBrush, thumbPath);
+            }
+            
+            // Draw thumb border
+            using (var borderPen = new Pen(Color.FromArgb(100, 100, 100), 1))
+            using (var borderPath = GetCirclePath(_thumbRect))
+            {
+                g.DrawPath(borderPen, borderPath);
             }
         }
         
@@ -291,8 +312,8 @@ namespace SimpleBrightness
         
         private void UpdateValueFromPosition(int x)
         {
-            int trackWidth = Width - ThumbSize - 4;
-            float ratio = (float)(x - 2 - ThumbSize / 2) / trackWidth;
+            int trackWidth = Width - ThumbSize - 8;
+            float ratio = (float)(x - 4) / trackWidth;
             ratio = Math.Clamp(ratio, 0, 1);
             Value = (int)(Minimum + ratio * (Maximum - Minimum));
         }
@@ -329,19 +350,16 @@ namespace SimpleBrightness
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             
-            // Determine colors
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
             
-            // Draw rounded background
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var brush = new SolidBrush(backColor))
-            using (var path = GetRoundedRect(rect, 6))
+            using (var path = GetRoundedRect(rect, 4))
             {
                 g.FillPath(brush, path);
             }
             
-            // Draw text
             TextRenderer.DrawText(g, Text, Font, rect, ForeColor, 
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
@@ -416,7 +434,7 @@ namespace SimpleBrightness
         private List<MonitorInfo> _monitors;
         private int _displayIndex = 0;
         
-        // Windows native OSD style colors
+        // Windows native OSD style colors (always light)
         private readonly Color _bgColor = Color.FromArgb(240, 240, 240);
         private readonly Color _textColor = Color.FromArgb(0, 0, 0);
         private readonly Color _trackColor = Color.FromArgb(200, 200, 200);
@@ -434,13 +452,24 @@ namespace SimpleBrightness
             
             // Fixed size like Windows native OSD
             this.Size = new Size(340, 80);
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
             
             _timer = new System.Windows.Forms.Timer { Interval = 2000 };
             _timer.Tick += (s, e) => this.Hide();
         }
 
         protected override bool ShowWithoutActivation => true;
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            // Apply rounded corners
+            if (Windows11Style.IsWindows11())
+            {
+                int corner = 2;
+                NativeMethods.DwmSetWindowAttribute(this.Handle, 33, ref corner, sizeof(int));
+            }
+            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
+        }
 
         public void ShowForMonitor(int monitorIndex)
         {
@@ -475,6 +504,9 @@ namespace SimpleBrightness
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
+            // Clear background
+            g.Clear(_bgColor);
+
             // Draw subtle shadow/border
             using (var borderPen = new Pen(Color.FromArgb(180, 180, 180), 1))
             {
@@ -491,7 +523,6 @@ namespace SimpleBrightness
             // Icon on the left (brightness icon)
             Rectangle iconRect = new Rectangle(20, 20, 40, 40);
             using (Font iconFont = new Font("Segoe MDL2 Assets", 24))
-            using (Brush iconBrush = new SolidBrush(_textColor))
             {
                 TextRenderer.DrawText(g, "\uE706", iconFont, iconRect, _textColor, 
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
@@ -555,7 +586,7 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== HelpForm (Windows 11 Style with Title) ==================
+    // ================== HelpForm ==================
     public class HelpForm : Form {
         public HelpForm() {
             this.Text = "使用说明";
@@ -567,7 +598,6 @@ namespace SimpleBrightness
             this.BackColor = ThemeManager.Background;
             this.ForeColor = ThemeManager.Text;
             
-            // Apply Windows 11 style
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
@@ -594,8 +624,7 @@ namespace SimpleBrightness
                 BorderStyle = BorderStyle.None,
                 Font = new Font("Segoe UI Variable Text", 10),
                 Padding = new Padding(12),
-                Text = 
-@"【快捷操作】
+                Text = @"【快捷操作】
 - 滚轮调节: 鼠标悬停托盘图标, 滚动调整亮度。
 - 中键同步: 对着图标按中键, 强制同步所有屏幕。
 
@@ -624,18 +653,17 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== SettingsForm (Windows 11 Style with Title) ==================
+    // ================== SettingsForm ==================
     public class SettingsForm : Form { 
         public SettingsForm(AppConfig config) { 
             this.Text = "设置"; 
-            this.Size = new Size(400, 560); 
+            this.Size = new Size(400, 520); 
             this.StartPosition = FormStartPosition.CenterScreen; 
             this.FormBorderStyle = FormBorderStyle.FixedDialog; 
             this.MaximizeBox = false;
             this.BackColor = ThemeManager.Background;
             this.ForeColor = ThemeManager.Text;
             
-            // Apply Windows 11 style
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
@@ -651,7 +679,6 @@ namespace SimpleBrightness
             };
             this.Controls.Add(panel);
             
-            // Title
             Label lblTitle = new Label { 
                 Text = "设置", 
                 AutoSize = true, 
@@ -661,19 +688,15 @@ namespace SimpleBrightness
             };
             panel.Controls.Add(lblTitle);
             
-            // Theme toggle
-            CheckBox chkTheme = new CheckBox { 
-                Text = "深色模式", 
+            // Show current theme (read-only, auto-detected)
+            Label lblTheme = new Label { 
+                Text = $"当前主题: {(ThemeManager.IsDarkMode ? "深色" : "浅色")} (自动)", 
                 AutoSize = true, 
-                Checked = ThemeManager.IsDarkMode, 
-                Font = new Font("Segoe UI Variable Text", 10), 
+                Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary,
                 Margin = new Padding(0, 0, 0, 20) 
             };
-            chkTheme.CheckedChanged += (s, e) => {
-                ThemeManager.IsDarkMode = chkTheme.Checked;
-            };
-            panel.Controls.Add(chkTheme);
+            panel.Controls.Add(lblTheme);
             
             CheckBox chkAuto = new CheckBox { 
                 Text = "开机自动启动", 
@@ -763,13 +786,13 @@ namespace SimpleBrightness
                 this.Close(); 
             }; 
             
-            panel.Controls.AddRange(new Control[] { lblTitle, chkTheme, chkAuto, lblStep, numStep, lblDelay, numDelay, lblPower, cmbPower, btnClearHidden, btnOk });
+            panel.Controls.AddRange(new Control[] { lblTitle, lblTheme, chkAuto, lblStep, numStep, lblDelay, numDelay, lblPower, cmbPower, btnClearHidden, btnOk });
         } 
         private bool IsAutoStart() { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false)) return key?.GetValue("SimpleBrightness") != null; } 
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } 
     }
 
-    // ================== BrightnessForm (Control Center - No Min/Max buttons) ==================
+    // ================== BrightnessForm (Control Center) ==================
     public class BrightnessForm : Form
     {
         private List<MonitorInfo> _monitors; 
@@ -812,7 +835,6 @@ namespace SimpleBrightness
             _config = config; 
             _context = context; 
             
-            // Control Center Settings - Fixed size, no min/max buttons
             this.Text = "控制中心";
             this.FormBorderStyle = FormBorderStyle.FixedDialog; 
             this.ShowInTaskbar = false; 
@@ -825,7 +847,6 @@ namespace SimpleBrightness
             this.AutoSizeMode = AutoSizeMode.GrowAndShrink; 
             this.Padding = new Padding(0);
             
-            // Apply Windows 11 style
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
@@ -919,7 +940,7 @@ namespace SimpleBrightness
                 card.Controls.Add(row1);
                 
                 Win11TrackBar slider = new Win11TrackBar { 
-                    Size = new Size(450, 36), 
+                    Size = new Size(450, 28), 
                     Maximum = 100, 
                     Minimum = 0, 
                     Value = m.LastBrightness, 
@@ -1043,7 +1064,7 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== CurveEditorForm (with Title) ==================
+    // ================== CurveEditorForm ==================
     public class CurveEditorForm : Form
     {
         private MonitorInfo _monitor; 
@@ -1092,7 +1113,6 @@ namespace SimpleBrightness
             this.Text = $"曲线编辑器 - {monitor.Name}";
             this.MaximizeBox = false;
             
-            // Apply Windows 11 style
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
@@ -1180,7 +1200,7 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== InputBox (with Title) ==================
+    // ================== InputBox ==================
     public class InputBox : Form { 
         public string ResultText { get; private set; } = ""; 
         public InputBox(string title, string prompt, string defaultText) { 
@@ -1193,7 +1213,6 @@ namespace SimpleBrightness
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             
-            // Apply Windows 11 style
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
@@ -1230,7 +1249,7 @@ namespace SimpleBrightness
         } 
     }
     
-    // Legacy OSD placeholder
+    // Legacy OSD placeholders
     public class OsdForm : Form { public OsdForm(string n){} public void UpdateName(string n){} public void ShowOSD(int v, bool d, int r, int x, int y){} }
     public class UnifiedOsdForm : Form { 
         public UnifiedOsdForm(List<MonitorInfo> monitors) {}
