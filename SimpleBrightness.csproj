@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 生成单文件，体积小 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained> 
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- 软件名称 -->
+    <AssemblyName>HM's Simple Brightness Tool</AssemblyName>
+    <!-- 图标文件 (请上传 app.ico 到仓库根目录，否则使用默认图标) -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+</Project>

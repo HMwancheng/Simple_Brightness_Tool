@@ -1,0 +1,75 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "GMN", "TR-CG" ]
+  workflow_dispatch:
+
+# 必须赋予写权限才能创建 Release
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    # 1. 检出代码 (fetch-depth: 0 确保能检测到文件变动历史)
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    # 2. 检测 BuildRelease.md 是否发生变化
+    - name: Check for Release Update
+      id: check_file
+      uses: dorny/paths-filter@v2
+      with:
+        filters: |
+          release:
+            - 'BuildRelease.md'
+
+    # 3. 配置 .NET 环境
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+
+    # 4. 恢复依赖
+    - name: Restore dependencies
+      run: dotnet restore
+
+    # 5. 编译生成 EXE (始终执行)
+    - name: Publish (Build EXE)
+      run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o build_output
+
+    # 6. 上传 Artifact (始终执行，作为普通 Action 产物)
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SimpleBrightnessTool
+        path: build_output/*.exe
+
+    # 7. 生成版本号 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
+    # 使用时间戳作为版本号，例如 v2025.01.01.1230
+    - name: Generate Tag
+      id: tag
+      if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
+      shell: bash
+      run: echo "tag_name=v$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+
+    # 8. 创建 Release 并上传文件 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
+      with:
+        # 使用上面生成的时间戳作为标签名
+        tag_name: ${{ steps.tag.outputs.tag_name }}
+        name: Release ${{ steps.tag.outputs.tag_name }}
+        # 读取 BuildRelease.md 的内容作为发布说明
+        body_path: BuildRelease.md
+        draft: false
+        prerelease: false
+        files: |
+          build_output/*.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
