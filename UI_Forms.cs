@@ -124,7 +124,7 @@ namespace SimpleBrightness
         }
     }
     
-    // ================== Native Windows Style TrackBar (Matching System) ==================
+    // ================== Windows 11 Style TrackBar (6px with Double Circle Thumb) ==================
     public class Win11TrackBar : Control
     {
         private int _value = 50;
@@ -133,8 +133,9 @@ namespace SimpleBrightness
         private bool _isDragging = false;
         private Rectangle _trackRect;
         private Rectangle _thumbRect;
-        private const int ThumbSize = 16; // Smaller thumb like Windows
-        private const int TrackHeight = 3; // Thinner track
+        private const int ThumbOuterSize = 20;  // Outer circle size
+        private const int ThumbInnerSize = 10;  // Inner circle size
+        private const int TrackHeight = 6;      // 6px track like reference image
         
         public event EventHandler? ValueChanged;
         public event EventHandler? Scroll;
@@ -171,7 +172,7 @@ namespace SimpleBrightness
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            Height = 28;
+            Height = 32;
             Cursor = Cursors.Hand;
         }
         
@@ -183,10 +184,10 @@ namespace SimpleBrightness
         
         private void UpdateThumbPosition()
         {
-            int trackWidth = Width - ThumbSize - 8;
+            int trackWidth = Width - ThumbOuterSize - 8;
             float ratio = _maximum > _minimum ? (float)(_value - _minimum) / (_maximum - _minimum) : 0;
             int thumbX = (int)(4 + ratio * trackWidth);
-            _thumbRect = new Rectangle(thumbX, (Height - ThumbSize) / 2, ThumbSize, ThumbSize);
+            _thumbRect = new Rectangle(thumbX, (Height - ThumbOuterSize) / 2, ThumbOuterSize, ThumbOuterSize);
             _trackRect = new Rectangle(4, (Height - TrackHeight) / 2, Width - 8, TrackHeight);
         }
         
@@ -218,33 +219,30 @@ namespace SimpleBrightness
                 }
             }
             
-            // Draw thumb (circle with border)
-            bool isHovering = ClientRectangle.Contains(PointToClient(Cursor.Position));
-            Color thumbColor = _isDragging ? ThemeManager.Accent : 
-                              isHovering ? ThemeManager.Thumb : ThemeManager.Thumb;
-            
-            // Draw thumb shadow
-            using (var shadowBrush = new SolidBrush(Color.FromArgb(40, 0, 0, 0)))
+            // Draw double circle thumb (like reference image)
+            // Outer circle (white in dark mode, gray in light mode)
+            Color outerColor = ThemeManager.IsDarkMode ? Color.White : Color.FromArgb(200, 200, 200);
+            using (var outerBrush = new SolidBrush(outerColor))
+            using (var outerPath = GetCirclePath(_thumbRect))
             {
-                var shadowRect = new Rectangle(_thumbRect.X + 1, _thumbRect.Y + 2, _thumbRect.Width, _thumbRect.Height);
-                using (var shadowPath = GetCirclePath(shadowRect))
-                {
-                    g.FillPath(shadowBrush, shadowPath);
-                }
+                g.FillPath(outerBrush, outerPath);
             }
             
-            // Draw thumb
-            using (var thumbBrush = new SolidBrush(thumbColor))
-            using (var thumbPath = GetCirclePath(_thumbRect))
-            {
-                g.FillPath(thumbBrush, thumbPath);
-            }
-            
-            // Draw thumb border
-            using (var borderPen = new Pen(Color.FromArgb(100, 100, 100), 1))
+            // Outer circle border
+            using (var borderPen = new Pen(ThemeManager.Border, 1))
             using (var borderPath = GetCirclePath(_thumbRect))
             {
                 g.DrawPath(borderPen, borderPath);
+            }
+            
+            // Inner circle (accent color)
+            int innerX = _thumbRect.X + (_thumbRect.Width - ThumbInnerSize) / 2;
+            int innerY = _thumbRect.Y + (_thumbRect.Height - ThumbInnerSize) / 2;
+            var innerRect = new Rectangle(innerX, innerY, ThumbInnerSize, ThumbInnerSize);
+            using (var innerBrush = new SolidBrush(ThemeManager.Accent))
+            using (var innerPath = GetCirclePath(innerRect))
+            {
+                g.FillPath(innerBrush, innerPath);
             }
         }
         
@@ -312,7 +310,7 @@ namespace SimpleBrightness
         
         private void UpdateValueFromPosition(int x)
         {
-            int trackWidth = Width - ThumbSize - 8;
+            int trackWidth = Width - ThumbOuterSize - 8;
             float ratio = (float)(x - 4) / trackWidth;
             ratio = Math.Clamp(ratio, 0, 1);
             Value = (int)(Minimum + ratio * (Maximum - Minimum));
@@ -427,7 +425,7 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== Native Windows Style OSD ==================
+    // ================== Native Windows Style OSD (Multiple Monitors Support) ==================
     public class NativeOsdForm : Form
     {
         private System.Windows.Forms.Timer _timer;
@@ -450,8 +448,11 @@ namespace SimpleBrightness
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             
-            // Fixed size like Windows native OSD
-            this.Size = new Size(340, 80);
+            // Dynamic size based on number of monitors (each monitor takes ~50px height)
+            int itemHeight = 45;
+            int padding = 20;
+            int totalHeight = padding * 2 + (_monitors.Count * itemHeight);
+            this.Size = new Size(340, Math.Max(80, totalHeight));
             
             _timer = new System.Windows.Forms.Timer { Interval = 2000 };
             _timer.Tick += (s, e) => this.Hide();
@@ -515,55 +516,56 @@ namespace SimpleBrightness
                 g.DrawRectangle(borderPen, rect);
             }
 
-            if (_monitors.Count == 0 || _displayIndex >= _monitors.Count) return;
+            if (_monitors.Count == 0) return;
             
-            var monitor = _monitors[_displayIndex];
-            int brightness = monitor.LastBrightness;
-
-            // Icon on the left (brightness icon)
-            Rectangle iconRect = new Rectangle(20, 20, 40, 40);
-            using (Font iconFont = new Font("Segoe MDL2 Assets", 24))
-            {
-                TextRenderer.DrawText(g, "\uE706", iconFont, iconRect, _textColor, 
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-            }
-
-            // Monitor name
-            using (Font nameFont = new Font("Segoe UI", 11))
-            using (Brush nameBrush = new SolidBrush(_textColor))
-            {
-                Rectangle nameRect = new Rectangle(70, 15, 250, 25);
-                g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
-            }
-
-            // Progress bar
-            int barLeft = 70;
-            int barTop = 45;
-            int barWidth = 200;
-            int barHeight = 5;
+            int startY = 15;
+            int itemHeight = 45;
             
-            // Track background
-            using (Brush trackBrush = new SolidBrush(_trackColor))
+            // Draw ALL monitors (fix the bug that only shows one)
+            for (int i = 0; i < _monitors.Count; i++)
             {
-                FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
-            }
-            
-            // Fill
-            int fillW = (int)(barWidth * (brightness / 100.0f));
-            if (fillW > 0)
-            {
-                using (Brush fillBrush = new SolidBrush(_fillColor))
+                var monitor = _monitors[i];
+                int brightness = monitor.LastBrightness;
+                int currentY = startY + (i * itemHeight);
+
+                // Monitor name (aligned left)
+                using (Font nameFont = new Font("Segoe UI", 11))
+                using (Brush nameBrush = new SolidBrush(_textColor))
                 {
-                    FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
+                    Rectangle nameRect = new Rectangle(20, currentY, 150, 25);
+                    g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
                 }
-            }
 
-            // Percentage text
-            using (Font valFont = new Font("Segoe UI", 11, FontStyle.Regular))
-            using (Brush valBrush = new SolidBrush(_textColor))
-            {
-                Rectangle valRect = new Rectangle(280, 38, 40, 25);
-                g.DrawString(brightness + "%", valFont, valBrush, valRect);
+                // Progress bar - 6px height with rounded corners
+                int barLeft = 20;
+                int barTop = currentY + 28;
+                int barWidth = 240;
+                int barHeight = 6;
+                
+                // Track background
+                using (Brush trackBrush = new SolidBrush(_trackColor))
+                {
+                    FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
+                }
+                
+                // Fill
+                int fillW = (int)(barWidth * (brightness / 100.0f));
+                if (fillW > 0)
+                {
+                    using (Brush fillBrush = new SolidBrush(_fillColor))
+                    {
+                        FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
+                    }
+                }
+
+                // Percentage text (aligned right)
+                using (Font valFont = new Font("Segoe UI", 11, FontStyle.Regular))
+                using (Brush valBrush = new SolidBrush(_textColor))
+                {
+                    Rectangle valRect = new Rectangle(270, currentY + 5, 50, 25);
+                    StringFormat sf = new StringFormat { Alignment = StringAlignment.Far };
+                    g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
+                }
             }
         }
         
@@ -653,7 +655,7 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== SettingsForm ==================
+    // ================== SettingsForm (with Scroll Support) ==================
     public class SettingsForm : Form { 
         public SettingsForm(AppConfig config) { 
             this.Text = "设置"; 
@@ -668,16 +670,25 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
+            // Create scrollable container
+            Panel scrollContainer = new Panel {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0)
+            };
+            this.Controls.Add(scrollContainer);
+            
             FlowLayoutPanel panel = new FlowLayoutPanel { 
                 FlowDirection = FlowDirection.TopDown, 
                 WrapContents = false, 
                 AutoSize = true, 
                 AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                 Padding = new Padding(24), 
-                Width = 400,
+                Width = 360,
                 BackColor = Color.Transparent
             };
-            this.Controls.Add(panel);
+            scrollContainer.Controls.Add(panel);
             
             Label lblTitle = new Label { 
                 Text = "设置", 
@@ -706,6 +717,7 @@ namespace SimpleBrightness
                 ForeColor = ThemeManager.TextSecondary,
                 Margin = new Padding(0, 0, 0, 20) 
             }; 
+            panel.Controls.Add(chkAuto);
             
             Label lblStep = new Label { 
                 Text = "滚轮步长 (1-20):", 
@@ -713,6 +725,8 @@ namespace SimpleBrightness
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary
             }; 
+            panel.Controls.Add(lblStep);
+            
             NumericUpDown numStep = new NumericUpDown { 
                 Minimum = 1, 
                 Maximum = 20, 
@@ -723,6 +737,7 @@ namespace SimpleBrightness
                 ForeColor = ThemeManager.Text,
                 BorderStyle = BorderStyle.FixedSingle
             }; 
+            panel.Controls.Add(numStep);
             
             Label lblDelay = new Label { 
                 Text = "调节响应延迟 (防卡顿 ms):", 
@@ -730,6 +745,8 @@ namespace SimpleBrightness
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary
             }; 
+            panel.Controls.Add(lblDelay);
+            
             NumericUpDown numDelay = new NumericUpDown { 
                 Minimum = 0, 
                 Maximum = 2000, 
@@ -740,6 +757,7 @@ namespace SimpleBrightness
                 ForeColor = ThemeManager.Text,
                 BorderStyle = BorderStyle.FixedSingle
             }; 
+            panel.Controls.Add(numDelay);
 
             Label lblPower = new Label { 
                 Text = "电源按钮模式:", 
@@ -747,6 +765,8 @@ namespace SimpleBrightness
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary
             };
+            panel.Controls.Add(lblPower);
+            
             ComboBox cmbPower = new ComboBox { 
                 Width = 280, 
                 DropDownStyle = ComboBoxStyle.DropDownList, 
@@ -758,6 +778,7 @@ namespace SimpleBrightness
             cmbPower.Items.Add("DDC/CI (硬件指令 - 推荐)");
             cmbPower.Items.Add("Windows API (软件信号 - 兼容)");
             cmbPower.SelectedIndex = config.UseSoftwarePower ? 1 : 0;
+            panel.Controls.Add(cmbPower);
 
             Win11Button btnClearHidden = new Win11Button { 
                 Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", 
@@ -770,6 +791,7 @@ namespace SimpleBrightness
                 config.HiddenMonitors.Clear(); 
                 MessageBox.Show("已重置，请重启软件。", "提示"); 
             }; 
+            panel.Controls.Add(btnClearHidden);
             
             Win11Button btnOk = new Win11Button { 
                 Text = "保存设置", 
@@ -785,8 +807,7 @@ namespace SimpleBrightness
                 SetAutoStart(chkAuto.Checked); 
                 this.Close(); 
             }; 
-            
-            panel.Controls.AddRange(new Control[] { lblTitle, lblTheme, chkAuto, lblStep, numStep, lblDelay, numDelay, lblPower, cmbPower, btnClearHidden, btnOk });
+            panel.Controls.Add(btnOk);
         } 
         private bool IsAutoStart() { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false)) return key?.GetValue("SimpleBrightness") != null; } 
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } 
@@ -939,7 +960,7 @@ namespace SimpleBrightness
                 row1.Controls.Add(lblVal); 
                 card.Controls.Add(row1);
                 
-                // Use custom Win11 style TrackBar
+                // Use custom Win11 style TrackBar (6px with double circle thumb)
                 Win11TrackBar slider = new Win11TrackBar { 
                     Size = new Size(450, 32), 
                     Maximum = 100, 
@@ -1066,16 +1087,14 @@ namespace SimpleBrightness
     }
 
     // ================== CurveEditorForm ==================
-    public class CurveEditorForm : Form
-    {
-        private MonitorInfo _monitor; 
-        private AppConfig _config; 
-        private Dictionary<int, int> _currentPoints; 
+    public class CurveEditorForm : Form {
+        private MonitorInfo _monitor;
+        private AppConfig _config;
+        private Dictionary<int, int> _points;
         private FlowLayoutPanel _panel;
         
         private Dictionary<int, int> GetCurveWithFallback() {
-            if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve)) 
-                return curve;
+            if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve)) return curve;
             
             if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
                 string[] parts = _monitor.UniqueId.Split('_');
@@ -1089,10 +1108,8 @@ namespace SimpleBrightness
                     }
                     
                     var curveKeys = _config.Curves.Keys.ToList();
-                    foreach (var curveId in curveKeys)
-                    {
-                        if (curveId.StartsWith($"DDC_{nameHash}_H") && curveId != _monitor.UniqueId)
-                        {
+                    foreach (var curveId in curveKeys) {
+                        if (curveId.StartsWith($"DDC_{nameHash}_H") && curveId != _monitor.UniqueId) {
                             var savedCurve = _config.Curves[curveId];
                             _config.Curves[_monitor.UniqueId] = savedCurve;
                             return savedCurve;
@@ -1104,53 +1121,60 @@ namespace SimpleBrightness
         }
         
         public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
-            _monitor = monitor; 
-            _config = config; 
-            _currentPoints = new Dictionary<int, int>(GetCurveWithFallback());
+            _monitor = monitor;
+            _config = config;
+            _points = new Dictionary<int, int>(GetCurveWithFallback());
             
-            this.Size = new Size(850, 500); 
-            this.BackColor = ThemeManager.Background; 
-            this.StartPosition = FormStartPosition.CenterScreen; 
-            this.Text = $"曲线编辑器 - {monitor.Name}";
-            this.MaximizeBox = false;
+            this.Size = new Size(900, 550);
+            this.BackColor = ThemeManager.Background;
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.Text = "曲线编辑器";
+            this.ForeColor = ThemeManager.Text;
             
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            Panel top = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Color.Transparent };
+            Panel top = new Panel { Dock = DockStyle.Top, Height = 70, BackColor = ThemeManager.Surface };
+            
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
-                Location = new Point(20, 18), 
+                Location = new Point(20, 20), 
                 AutoSize = true, 
-                ForeColor = ThemeManager.Text, 
-                Font = new Font("Segoe UI Variable Display", 14, FontStyle.Regular) 
+                ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI Variable Display", 14)
             };
+            
             NumericUpDown num = new NumericUpDown { 
                 Value = 50, 
                 Width = 80, 
-                Location = new Point(350, 13), 
-                Font = new Font("Segoe UI Variable Text", 10),
+                Location = new Point(400, 18),
                 BackColor = ThemeManager.Surface,
-                ForeColor = ThemeManager.Text,
-                BorderStyle = BorderStyle.FixedSingle
+                ForeColor = ThemeManager.Text
             };
+            
             Win11Button add = new Win11Button { 
                 Text = "添加节点", 
-                Width = 110, 
-                Height = 34, 
-                Location = new Point(440, 13),
-                BackColor = Color.FromArgb(60, 60, 60)
+                Location = new Point(490, 15), 
+                Size = new Size(100, 36) 
             };
+            
             Win11Button save = new Win11Button { 
                 Text = "保存并生效", 
-                Width = 120, 
-                Height = 34, 
-                Location = new Point(700, 13)
+                Location = new Point(750, 15), 
+                Size = new Size(120, 36) 
             };
-            add.Click += (s, e) => { int x = (int)num.Value; if (!_currentPoints.ContainsKey(x)) { _currentPoints[x] = x; RefreshSliders(); }};
-            save.Click += (s, e) => { 
-                _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_currentPoints); 
+            
+            add.Click += (s, e) => {
+                int x = (int)num.Value;
+                if (!_points.ContainsKey(x)) {
+                    _points[x] = x;
+                    RefreshSliders();
+                }
+            };
+            
+            save.Click += (s, e) => {
+                _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_points);
                 if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
                     string[] parts = _monitor.UniqueId.Split('_');
                     if (parts.Length >= 4) {
@@ -1160,59 +1184,135 @@ namespace SimpleBrightness
                         _config.Curves.Remove(oldId);
                     }
                 }
-                _config.Save(); 
-                this.Close(); 
+                _config.Save();
+                this.Close();
             };
+            
             top.Controls.AddRange(new Control[] { title, num, add, save });
             this.Controls.Add(top);
-            _panel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(20, 10, 0, 0), BackColor = Color.Transparent };
-            this.Controls.Add(_panel); 
+            
+            _panel = new FlowLayoutPanel {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(20, 10, 0, 0),
+                BackColor = ThemeManager.Background
+            };
+            this.Controls.Add(_panel);
             _panel.BringToFront();
+            
             RefreshSliders();
         }
         
-        private void RefreshSliders() { 
-            _panel.Controls.Clear(); 
-            if (!_currentPoints.ContainsKey(0)) _currentPoints[0]=0; 
-            if(!_currentPoints.ContainsKey(100)) _currentPoints[100]=100; 
-            foreach(var k in _currentPoints.Keys.OrderBy(x=>x)) _panel.Controls.Add(CreateItem(k, _currentPoints[k])); 
+        private void RefreshSliders() {
+            _panel.Controls.Clear();
+            if (!_points.ContainsKey(0)) _points[0] = 0;
+            if (!_points.ContainsKey(100)) _points[100] = 100;
+            
+            foreach (var k in _points.Keys.OrderBy(x => x)) {
+                _panel.Controls.Add(CreateItem(k, _points[k]));
+            }
         }
         
-        private Control CreateItem(int x, int y) { 
-             Panel p = new Panel { Width = 70, Height = 320, Margin = new Padding(8), BackColor = ThemeManager.Surface };
-             Label l = new Label { Text = y.ToString(), Top = 5, Width = 70, Height = 25, TextAlign = ContentAlignment.MiddleCenter, ForeColor = ThemeManager.Accent, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
-             int panelH = 320; int labelH = 20; int btnH = 20; 
-             Label k = new Label { Text = x + "%", Top = panelH - labelH - btnH - 5, Width = 70, TextAlign = ContentAlignment.MiddleCenter, ForeColor = ThemeManager.Text, Font = new Font("Segoe UI", 9) };
-             Control bottomCtrl;
-             if (x != 0 && x != 100) {
-                 Button d = new Button { Text = "×", Top = panelH - btnH - 5, Left = 20, Width = 30, Height = 20, ForeColor = Color.Red, FlatStyle = FlatStyle.Flat, BackColor = Color.Transparent }; d.FlatAppearance.BorderSize = 0;
-                 d.Click += (s, e) => { _currentPoints.Remove(x); RefreshSliders(); }; bottomCtrl = d;
-             } else {
-                 Label lockLbl = new Label { Text = "🔒", Top = panelH - btnH - 5, Width = 70, Height = 20, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gray, Font = new Font("Segoe UI", 8) };
-                 bottomCtrl = lockLbl;
-             }
-             int sliderTop = 35; int sliderH = (panelH - labelH - btnH - 5) - sliderTop - 5;
-             TrackBar t = new TrackBar { Orientation = Orientation.Vertical, Minimum = 0, Maximum = 100, Value = y, Top = sliderTop, Height = sliderH, Width = 45, Left = 12, TickStyle = TickStyle.None };
-             ToolTip tip = new ToolTip(); 
-             t.Scroll += (s, e) => { _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); tip.SetToolTip(t, t.Value.ToString()); };
-             t.MouseWheel += (s, e) => { int change = e.Delta > 0 ? 1 : -1; t.Value = Math.Clamp(t.Value + change, 0, 100); _currentPoints[x] = t.Value; l.Text = t.Value.ToString(); ((HandledMouseEventArgs)e).Handled = true; };
-             p.Controls.AddRange(new Control[]{l, t, k, bottomCtrl}); 
-             return p;
+        private Control CreateItem(int x, int y) {
+            Panel p = new Panel { 
+                Width = 80, 
+                Height = 350, 
+                Margin = new Padding(8),
+                BackColor = ThemeManager.Surface
+            };
+            
+            Label l = new Label { 
+                Text = y.ToString(), 
+                Top = 10, 
+                Width = 80, 
+                Height = 25, 
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = ThemeManager.Accent,
+                Font = new Font("Segoe UI", 11, FontStyle.Bold)
+            };
+            
+            int panelH = 350;
+            int labelH = 25;
+            int btnH = 30;
+            
+            Label k = new Label { 
+                Text = x + "%", 
+                Top = panelH - labelH - btnH - 10, 
+                Width = 80, 
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = ThemeManager.TextSecondary
+            };
+            
+            Control bottomCtrl;
+            if (x != 0 && x != 100) {
+                Win11Button d = new Win11Button { 
+                    Text = "×", 
+                    Top = panelH - btnH - 10, 
+                    Left = 25, 
+                    Size = new Size(30, 26),
+                    BackColor = Color.FromArgb(80, 80, 80)
+                };
+                d.Click += (s, e) => { _points.Remove(x); RefreshSliders(); };
+                bottomCtrl = d;
+            } else {
+                Label lockLbl = new Label { 
+                    Text = "🔒", 
+                    Top = panelH - btnH - 10, 
+                    Width = 80, 
+                    Height = 26, 
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    ForeColor = ThemeManager.TextSecondary
+                };
+                bottomCtrl = lockLbl;
+            }
+            
+            int sliderTop = 45;
+            int sliderH = (panelH - labelH - btnH - 10) - sliderTop - 10;
+            
+            TrackBar t = new TrackBar {
+                Orientation = Orientation.Vertical,
+                Minimum = 0,
+                Maximum = 100,
+                Value = y,
+                Top = sliderTop,
+                Height = sliderH,
+                Width = 45,
+                Left = 17,
+                TickStyle = TickStyle.None
+            };
+            
+            ToolTip tip = new ToolTip();
+            t.Scroll += (s, e) => {
+                _points[x] = t.Value;
+                l.Text = t.Value.ToString();
+                tip.SetToolTip(t, t.Value.ToString());
+            };
+            
+            t.MouseWheel += (s, e) => {
+                int change = e.Delta > 0 ? 1 : -1;
+                t.Value = Math.Clamp(t.Value + change, 0, 100);
+                _points[x] = t.Value;
+                l.Text = t.Value.ToString();
+                ((HandledMouseEventArgs)e).Handled = true;
+            };
+            
+            p.Controls.AddRange(new Control[] { l, t, k, bottomCtrl });
+            return p;
         }
     }
 
     // ================== InputBox ==================
-    public class InputBox : Form { 
-        public string ResultText { get; private set; } = ""; 
-        public InputBox(string title, string prompt, string defaultText) { 
-            this.Size = new Size(360, 200); 
-            this.Text = title; 
-            this.StartPosition = FormStartPosition.CenterScreen; 
-            this.FormBorderStyle = FormBorderStyle.FixedDialog; 
+    public class InputBox : Form {
+        public string ResultText { get; private set; } = "";
+        
+        public InputBox(string title, string prompt, string defaultText) {
+            this.Size = new Size(380, 200);
+            this.Text = title;
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.BackColor = ThemeManager.Background;
             this.ForeColor = ThemeManager.Text;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
             
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
@@ -1220,42 +1320,36 @@ namespace SimpleBrightness
             
             Label l = new Label { 
                 Text = prompt, 
-                Top = 24, 
+                Top = 20, 
                 Left = 24, 
                 AutoSize = true,
-                Font = new Font("Segoe UI Variable Text", 11),
-                ForeColor = ThemeManager.TextSecondary
-            }; 
+                ForeColor = ThemeManager.Text
+            };
+            
             TextBox t = new TextBox { 
                 Text = defaultText, 
-                Top = 55, 
+                Top = 50, 
                 Left = 24, 
-                Width = 300,
+                Width = 320,
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text,
-                BorderStyle = BorderStyle.FixedSingle,
-                Font = new Font("Segoe UI Variable Text", 10)
-            }; 
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            
             Win11Button b = new Win11Button { 
                 Text = "确定", 
-                Top = 110, 
-                Left = 240, 
-                Width = 84,
-                Height = 36,
-                DialogResult = DialogResult.OK 
-            }; 
-            b.Click += (s, e) => { ResultText = t.Text; this.Close(); }; 
-            this.Controls.AddRange(new Control[] { l, t, b }); 
-            this.AcceptButton = b; 
-        } 
+                Top = 100, 
+                Left = 250, 
+                Size = new Size(100, 36),
+                DialogResult = DialogResult.OK
+            };
+            b.Click += (s, e) => { ResultText = t.Text; this.Close(); };
+            
+            this.Controls.AddRange(new Control[] { l, t, b });
+            this.AcceptButton = b;
+        }
     }
     
-    // Legacy OSD placeholders
-    public class OsdForm : Form { public OsdForm(string n){} public void UpdateName(string n){} public void ShowOSD(int v, bool d, int r, int x, int y){} }
-    public class UnifiedOsdForm : Form { 
-        public UnifiedOsdForm(List<MonitorInfo> monitors) {}
-        public void UpdateDisplay() {}
-        public void UpdateMonitors(List<MonitorInfo> monitors) {}
-    }
+    // OsdForm (Placeholder)
+    public class OsdForm : Form { public OsdForm(string n) { } public void UpdateName(string n) { } public void ShowOSD(int v, bool d, int r, int x, int y) { } }
 }
-
