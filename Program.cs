@@ -853,6 +853,7 @@ namespace SimpleBrightness
         public int ScrollStep { get; set; } = 5; 
         public int DebounceTime { get; set; } = 200; 
         public bool UseSoftwarePower { get; set; } = false;
+        public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
         public List<string> HiddenMonitors { get; set; } = new List<string>(); 
         public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); 
         public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 

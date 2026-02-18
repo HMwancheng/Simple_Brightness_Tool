@@ -11,15 +11,52 @@ using Microsoft.Win32;
 
 namespace SimpleBrightness
 {
+    // ================== Theme Mode Enum ==================
+    public enum ThemeMode
+    {
+        Light = 0,
+        Dark = 1,
+        System = 2
+    }
+
     // ================== Theme Manager (Auto-detect System Theme) ==================
     public static class ThemeManager
     {
+        private static ThemeMode _themeMode = ThemeMode.System;
         private static bool _isDarkMode = true;
+        
+        public static ThemeMode ThemeMode
+        {
+            get => _themeMode;
+            set
+            {
+                _themeMode = value;
+                ApplyThemeMode();
+            }
+        }
         
         public static bool IsDarkMode 
         { 
             get => _isDarkMode;
             set => _isDarkMode = value;
+        }
+        
+        // Apply theme mode
+        private static void ApplyThemeMode()
+        {
+            switch (_themeMode)
+            {
+                case ThemeMode.Light:
+                    _isDarkMode = false;
+                    break;
+                case ThemeMode.Dark:
+                    _isDarkMode = true;
+                    break;
+                case ThemeMode.System:
+                default:
+                    AutoDetectTheme();
+                    break;
+            }
         }
         
         // Auto-detect system theme from Windows registry
@@ -47,6 +84,32 @@ namespace SimpleBrightness
             }
         }
         
+        // Get system accent color
+        public static Color GetSystemAccentColor()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM"))
+                {
+                    if (key != null)
+                    {
+                        var value = key.GetValue("AccentColor");
+                        if (value is int accentColor)
+                        {
+                            // Convert from ABGR to RGB
+                            int r = accentColor & 0xFF;
+                            int g = (accentColor >> 8) & 0xFF;
+                            int b = (accentColor >> 16) & 0xFF;
+                            return Color.FromArgb(r, g, b);
+                        }
+                    }
+                }
+            }
+            catch { }
+            // Default accent color
+            return Color.FromArgb(0, 120, 212);
+        }
+        
         // Dark Mode Colors
         public static class Dark
         {
@@ -54,7 +117,6 @@ namespace SimpleBrightness
             public static readonly Color Surface = Color.FromArgb(45, 45, 45);
             public static readonly Color Text = Color.FromArgb(255, 255, 255);
             public static readonly Color TextSecondary = Color.FromArgb(200, 200, 200);
-            public static readonly Color Accent = Color.FromArgb(0, 120, 212);
             public static readonly Color Track = Color.FromArgb(80, 80, 80);
             public static readonly Color Border = Color.FromArgb(60, 60, 60);
             public static readonly Color Thumb = Color.FromArgb(200, 200, 200);
@@ -67,7 +129,6 @@ namespace SimpleBrightness
             public static readonly Color Surface = Color.FromArgb(255, 255, 255);
             public static readonly Color Text = Color.FromArgb(0, 0, 0);
             public static readonly Color TextSecondary = Color.FromArgb(80, 80, 80);
-            public static readonly Color Accent = Color.FromArgb(0, 95, 184);
             public static readonly Color Track = Color.FromArgb(200, 200, 200);
             public static readonly Color Border = Color.FromArgb(200, 200, 200);
             public static readonly Color Thumb = Color.FromArgb(100, 100, 100);
@@ -77,7 +138,7 @@ namespace SimpleBrightness
         public static Color Surface => IsDarkMode ? Dark.Surface : Light.Surface;
         public static Color Text => IsDarkMode ? Dark.Text : Light.Text;
         public static Color TextSecondary => IsDarkMode ? Dark.TextSecondary : Light.TextSecondary;
-        public static Color Accent => IsDarkMode ? Dark.Accent : Light.Accent;
+        public static Color Accent => GetSystemAccentColor();
         public static Color Track => IsDarkMode ? Dark.Track : Light.Track;
         public static Color Border => IsDarkMode ? Dark.Border : Light.Border;
         public static Color Thumb => IsDarkMode ? Dark.Thumb : Light.Thumb;
@@ -133,8 +194,9 @@ namespace SimpleBrightness
         private bool _isDragging = false;
         private Rectangle _trackRect;
         private Rectangle _thumbRect;
-        private const int ThumbOuterSize = 20;  // Outer circle size
-        private const int ThumbInnerSize = 10;  // Inner circle size
+        // Increased by 4px as requested: 20+4=24, 10+4=14
+        private const int ThumbOuterSize = 24;  // Outer circle size (was 20, now 24)
+        private const int ThumbInnerSize = 14;  // Inner circle size (was 10, now 14)
         private const int TrackHeight = 6;      // 6px track like reference image
         
         public event EventHandler? ValueChanged;
@@ -172,7 +234,7 @@ namespace SimpleBrightness
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            Height = 32;
+            Height = 36; // Increased to accommodate larger thumb
             Cursor = Cursors.Hand;
         }
         
@@ -207,7 +269,7 @@ namespace SimpleBrightness
                 g.FillPath(trackBrush, trackPath);
             }
             
-            // Draw track fill (accent color)
+            // Draw track fill (system accent color)
             if (_value > _minimum)
             {
                 int fillWidth = (int)((float)(_value - _minimum) / (_maximum - _minimum) * _trackRect.Width);
@@ -235,7 +297,7 @@ namespace SimpleBrightness
                 g.DrawPath(borderPen, borderPath);
             }
             
-            // Inner circle (accent color)
+            // Inner circle (system accent color)
             int innerX = _thumbRect.X + (_thumbRect.Width - ThumbInnerSize) / 2;
             int innerY = _thumbRect.Y + (_thumbRect.Height - ThumbInnerSize) / 2;
             var innerRect = new Rectangle(innerX, innerY, ThumbInnerSize, ThumbInnerSize);
@@ -436,7 +498,6 @@ namespace SimpleBrightness
         private readonly Color _bgColor = Color.FromArgb(240, 240, 240);
         private readonly Color _textColor = Color.FromArgb(0, 0, 0);
         private readonly Color _trackColor = Color.FromArgb(200, 200, 200);
-        private readonly Color _fillColor = Color.FromArgb(0, 120, 212);
         
         public NativeOsdForm(List<MonitorInfo> monitors)
         {
@@ -448,11 +509,11 @@ namespace SimpleBrightness
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             
-            // Dynamic size based on number of monitors (each monitor takes ~50px height)
-            int itemHeight = 45;
+            // Dynamic size based on number of monitors with proper spacing
+            int itemHeight = 50;  // Increased for better spacing
             int padding = 20;
             int totalHeight = padding * 2 + (_monitors.Count * itemHeight);
-            this.Size = new Size(340, Math.Max(80, totalHeight));
+            this.Size = new Size(340, Math.Max(100, totalHeight));
             
             _timer = new System.Windows.Forms.Timer { Interval = 2000 };
             _timer.Tick += (s, e) => this.Hide();
@@ -518,29 +579,35 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            int startY = 15;
-            int itemHeight = 45;
+            int startY = 18;  // Starting Y position
+            int itemHeight = 50;  // Height per monitor item
+            int leftMargin = 20;  // Left margin
+            int rightMargin = 20; // Right margin
+            int barWidth = 220;   // Progress bar width
+            int barHeight = 6;    // Progress bar height (6px)
             
-            // Draw ALL monitors (fix the bug that only shows one)
+            // Calculate positions for equal spacing
+            int availableWidth = this.Width - leftMargin - rightMargin;
+            int textWidth = availableWidth - barWidth - 10; // 10px gap between bar and value
+            
+            // Draw ALL monitors
             for (int i = 0; i < _monitors.Count; i++)
             {
                 var monitor = _monitors[i];
                 int brightness = monitor.LastBrightness;
                 int currentY = startY + (i * itemHeight);
+                int barTop = currentY + 26; // Position bar below name with proper spacing
 
-                // Monitor name (aligned left)
-                using (Font nameFont = new Font("Segoe UI", 11))
+                // Monitor name (smaller, bold, aligned left)
+                using (Font nameFont = new Font("Segoe UI", 10, FontStyle.Bold))
                 using (Brush nameBrush = new SolidBrush(_textColor))
                 {
-                    Rectangle nameRect = new Rectangle(20, currentY, 150, 25);
+                    Rectangle nameRect = new Rectangle(leftMargin, currentY, textWidth, 22);
                     g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
                 }
 
                 // Progress bar - 6px height with rounded corners
-                int barLeft = 20;
-                int barTop = currentY + 28;
-                int barWidth = 240;
-                int barHeight = 6;
+                int barLeft = leftMargin;
                 
                 // Track background
                 using (Brush trackBrush = new SolidBrush(_trackColor))
@@ -548,22 +615,25 @@ namespace SimpleBrightness
                     FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
                 }
                 
-                // Fill
+                // Fill (system accent color)
                 int fillW = (int)(barWidth * (brightness / 100.0f));
                 if (fillW > 0)
                 {
-                    using (Brush fillBrush = new SolidBrush(_fillColor))
+                    using (Brush fillBrush = new SolidBrush(ThemeManager.Accent))
                     {
                         FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
                     }
                 }
 
-                // Percentage text (aligned right)
-                using (Font valFont = new Font("Segoe UI", 11, FontStyle.Regular))
+                // Value text (no % symbol, centered vertically with slider, right aligned)
+                using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
                 using (Brush valBrush = new SolidBrush(_textColor))
                 {
-                    Rectangle valRect = new Rectangle(270, currentY + 5, 50, 25);
-                    StringFormat sf = new StringFormat { Alignment = StringAlignment.Far };
+                    // Position value text to the right of the bar, centered vertically with the bar
+                    int valX = barLeft + barWidth + 10;
+                    int valY = barTop - 9; // Center with 6px bar (22px height text, bar is 6px)
+                    Rectangle valRect = new Rectangle(valX, valY, 50, 24);
+                    StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
                     g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
                 }
             }
@@ -655,11 +725,12 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== SettingsForm (with Scroll Support) ==================
+    // ================== SettingsForm (with Scroll Support and Theme Selection) ==================
     public class SettingsForm : Form { 
         public SettingsForm(AppConfig config) { 
             this.Text = "设置"; 
-            this.Size = new Size(400, 520); 
+            // Increased default size
+            this.Size = new Size(450, 580); 
             this.StartPosition = FormStartPosition.CenterScreen; 
             this.FormBorderStyle = FormBorderStyle.FixedDialog; 
             this.MaximizeBox = false;
@@ -685,7 +756,7 @@ namespace SimpleBrightness
                 AutoSize = true, 
                 AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                 Padding = new Padding(24), 
-                Width = 360,
+                Width = 400,
                 BackColor = Color.Transparent
             };
             scrollContainer.Controls.Add(panel);
@@ -699,15 +770,35 @@ namespace SimpleBrightness
             };
             panel.Controls.Add(lblTitle);
             
-            // Show current theme (read-only, auto-detected)
+            // Theme Mode Selection
             Label lblTheme = new Label { 
-                Text = $"当前主题: {(ThemeManager.IsDarkMode ? "深色" : "浅色")} (自动)", 
+                Text = "主题颜色:", 
                 AutoSize = true, 
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary,
-                Margin = new Padding(0, 0, 0, 20) 
+                Margin = new Padding(0, 0, 0, 5)
             };
             panel.Controls.Add(lblTheme);
+            
+            ComboBox cmbTheme = new ComboBox { 
+                Width = 320, 
+                DropDownStyle = ComboBoxStyle.DropDownList, 
+                Margin = new Padding(0, 0, 0, 20),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                FlatStyle = FlatStyle.Flat
+            };
+            cmbTheme.Items.Add("浅色");
+            cmbTheme.Items.Add("深色");
+            cmbTheme.Items.Add("跟随系统");
+            // Map config theme mode to combo box index
+            cmbTheme.SelectedIndex = config.ThemeMode switch {
+                ThemeMode.Light => 0,
+                ThemeMode.Dark => 1,
+                ThemeMode.System => 2,
+                _ => 2
+            };
+            panel.Controls.Add(cmbTheme);
             
             CheckBox chkAuto = new CheckBox { 
                 Text = "开机自动启动", 
@@ -768,7 +859,7 @@ namespace SimpleBrightness
             panel.Controls.Add(lblPower);
             
             ComboBox cmbPower = new ComboBox { 
-                Width = 280, 
+                Width = 320, 
                 DropDownStyle = ComboBoxStyle.DropDownList, 
                 Margin = new Padding(0, 5, 0, 20),
                 BackColor = ThemeManager.Surface,
@@ -782,7 +873,7 @@ namespace SimpleBrightness
 
             Win11Button btnClearHidden = new Win11Button { 
                 Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", 
-                Width = 320, 
+                Width = 350, 
                 Height = 40, 
                 Margin = new Padding(0, 10, 0, 10),
                 BackColor = Color.FromArgb(60, 60, 60)
@@ -798,12 +889,21 @@ namespace SimpleBrightness
                 Width = 140, 
                 Height = 40, 
                 DialogResult = DialogResult.OK, 
-                Margin = new Padding(180, 20, 0, 0)
+                Margin = new Padding(210, 20, 0, 0)
             }; 
             btnOk.Click += (s, e) => { 
                 config.ScrollStep = (int)numStep.Value; 
                 config.DebounceTime = (int)numDelay.Value; 
                 config.UseSoftwarePower = (cmbPower.SelectedIndex == 1);
+                // Save theme mode
+                config.ThemeMode = cmbTheme.SelectedIndex switch {
+                    0 => ThemeMode.Light,
+                    1 => ThemeMode.Dark,
+                    2 => ThemeMode.System,
+                    _ => ThemeMode.System
+                };
+                // Apply theme mode immediately
+                ThemeManager.ThemeMode = config.ThemeMode;
                 SetAutoStart(chkAuto.Checked); 
                 this.Close(); 
             }; 
@@ -960,9 +1060,9 @@ namespace SimpleBrightness
                 row1.Controls.Add(lblVal); 
                 card.Controls.Add(row1);
                 
-                // Use custom Win11 style TrackBar (6px with double circle thumb)
+                // Use custom Win11 style TrackBar (6px with double circle thumb, larger thumb)
                 Win11TrackBar slider = new Win11TrackBar { 
-                    Size = new Size(450, 32), 
+                    Size = new Size(450, 36), // Increased height for larger thumb
                     Maximum = 100, 
                     Minimum = 0, 
                     Value = m.LastBrightness, 
