@@ -541,10 +541,34 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Windows tray icon standard sizes: 16x16, 20x20, 24x24, 32x32
-            // Use 32x32 as base for best quality, system will scale as needed
-            int iconSize = 32;
-            int fontSize = 18;  // Proportional font size for 32x32 icon
+            // Get system metrics for proper icon sizing
+            int systemDpi = GetSystemDpi();
+            int taskbarHeight = GetTaskbarHeight();
+            
+            // Calculate appropriate icon size based on taskbar
+            // Windows typically uses 16x16, 20x20, 24x24, or 32x32
+            int iconSize;
+            if (taskbarHeight >= 60) {
+                iconSize = 32;  // Large taskbar
+            } else if (taskbarHeight >= 48) {
+                iconSize = 24;  // Medium taskbar (default on 1080p)
+            } else if (taskbarHeight >= 40) {
+                iconSize = 20;  // Small taskbar
+            } else {
+                iconSize = 16;  // Smallest
+            }
+            
+            // Scale icon size based on DPI
+            float dpiScale = systemDpi / 96.0f;
+            iconSize = (int)(iconSize * dpiScale);
+            
+            // Ensure minimum size for visibility
+            if (iconSize < 16) iconSize = 16;
+            if (iconSize > 48) iconSize = 48;
+            
+            // Font size proportional to icon (about 60% of icon size)
+            int fontSize = (int)(iconSize * 0.6);
+            if (fontSize < 10) fontSize = 10;
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
@@ -559,6 +583,45 @@ namespace SimpleBrightness
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                 return Icon.FromHandle(bmp.GetHicon());
             }
+        }
+        
+        private static int GetSystemDpi()
+        {
+            try
+            {
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    return (int)g.DpiX;
+                }
+            }
+            catch
+            {
+                return 96;
+            }
+        }
+        
+        private static int GetTaskbarHeight()
+        {
+            try
+            {
+                // Get primary screen working area vs bounds to estimate taskbar size
+                Rectangle screenBounds = Screen.PrimaryScreen.Bounds;
+                Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
+                
+                // Taskbar is usually at the bottom
+                int taskbarHeight = screenBounds.Height - workingArea.Height;
+                if (taskbarHeight > 10 && taskbarHeight < 200)
+                    return taskbarHeight;
+                
+                // If that didn't work, check width (taskbar could be on side)
+                int taskbarWidth = screenBounds.Width - workingArea.Width;
+                if (taskbarWidth > 10 && taskbarWidth < 200)
+                    return taskbarWidth;
+            }
+            catch { }
+            
+            // Default values based on Windows version
+            return 48;  // Default Windows 10/11 taskbar height
         }
     }
 
@@ -654,28 +717,44 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            // Layout constants - balanced margins on all sides
-            int iconSize = 16;     // Size for brightness icon
-            int barHeight = 6;     // Progress bar height (6px)
-            int gap = 10;          // Gap between elements
-            int itemHeight = 40;   // Height per monitor item (reduced for compact layout)
-            int margin = 16;       // Equal margin on all sides
-            int valWidth = 32;     // Width for value text
+            // Auto-calculate layout based on content
+            int barHeight = 6;           // Progress bar height
+            int contentPadding = 12;     // Minimal padding around content
+            int elementGap = 8;          // Gap between icon/bar/value
             
-            // Calculate positions: icon - gap - bar - gap - value
-            int iconX = margin;
-            int barLeft = iconX + iconSize + gap;
-            int barWidth = this.Width - barLeft - gap - valWidth - margin;
-            int valX = barLeft + barWidth + gap;
+            // Measure value text width for "100"
+            int valWidth = 36;           // Width for value text
             
-            // Calculate starting Y with equal top/bottom margins
+            // Calculate available width and distribute evenly
+            int availableWidth = this.Width - (contentPadding * 2);
+            int totalGap = elementGap * 2;  // Two gaps: icon-bar and bar-value
+            int barWidth = availableWidth - 20 - totalGap - valWidth;  // 20 for icon
+            
+            // Calculate positions for equal spacing
+            int iconX = contentPadding;
+            int barLeft = iconX + 20 + elementGap;
+            int valX = barLeft + barWidth + elementGap;
+            
+            // Auto-calculate item height based on content (bar + minimal padding)
+            int itemHeight = barHeight + 16;  // 8px padding top and bottom
+            
+            // Auto-calculate OSD height based on content
             int totalContentHeight = (_monitors.Count * itemHeight);
-            int availableHeight = this.Height - (margin * 2);
-            int startY = margin + (availableHeight - totalContentHeight) / 2;
-            if (startY < margin) startY = margin;
+            int osdHeight = totalContentHeight + (contentPadding * 2);
             
-            // Icon font for brightness symbol (small sun)
-            using (Font iconFont = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular))
+            // Resize OSD if needed (only if significantly different)
+            if (Math.Abs(this.Height - osdHeight) > 10)
+            {
+                this.Height = osdHeight;
+                // Recalculate region for rounded corners
+                this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
+            }
+            
+            // Starting Y with minimal padding
+            int startY = contentPadding;
+            
+            // Icon font for brightness symbol - use larger sun icon
+            using (Font iconFont = new Font("Segoe MDL2 Assets", 14, FontStyle.Regular))
             using (Brush iconBrush = new SolidBrush(_textColor))
             {
                 // Draw ALL monitors
@@ -688,12 +767,13 @@ namespace SimpleBrightness
                     // Vertical center of the item
                     int centerY = currentY + itemHeight / 2;
                     int barTop = centerY - barHeight / 2;
-                    int valY = centerY - 9; // Half of 18px text height
+                    int valY = centerY - 9;
 
-                    // Draw brightness icon (small sun) on the left
-                    Size iconTextSize = TextRenderer.MeasureText("\uE708", iconFont);
+                    // Draw brightness icon (sun) - use E706 for clear sun icon
+                    Size iconTextSize = TextRenderer.MeasureText("\uE706", iconFont);
+                    int iconDrawX = iconX + (20 - iconTextSize.Width) / 2;  // Center in 20px space
                     int iconDrawY = centerY - iconTextSize.Height / 2;
-                    TextRenderer.DrawText(g, "\uE708", iconFont, new Point(iconX, iconDrawY), _textColor);
+                    TextRenderer.DrawText(g, "\uE706", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
 
                     // Progress bar - 6px height with rounded corners
                     using (Brush trackBrush = new SolidBrush(_trackColor))
