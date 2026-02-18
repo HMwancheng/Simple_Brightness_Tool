@@ -5,9 +5,11 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- DPI Awareness for high DPI displays -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- 生成单文件，体积小 -->
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>false</SelfContained> 
+    <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- 软件名称 -->
     <AssemblyName>HM's Simple Brightness Tool</AssemblyName>

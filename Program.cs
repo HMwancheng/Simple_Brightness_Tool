@@ -116,8 +116,9 @@ namespace SimpleBrightness
             // Create a native message window for hotkey messages
             _hotkeyWindow = new HotkeyMessageWindow();
             _hotkeyWindow.HotkeyPressed += (hotkeyId) => {
-                if (hotkeyId == 1) AdjustBrightnessByHotkey(true);
-                else if (hotkeyId == 2) AdjustBrightnessByHotkey(false);
+                // hotkeyId 1 = decrease (F5), hotkeyId 2 = increase (F6)
+                if (hotkeyId == 1) AdjustBrightnessByHotkey(false);
+                else if (hotkeyId == 2) AdjustBrightnessByHotkey(true);
             };
             
             // Register increase brightness hotkey

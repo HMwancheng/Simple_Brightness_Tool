@@ -541,40 +541,10 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Get screen resolution and DPI for proper icon sizing
-            int systemDpi = GetSystemDpi();
-            Size screenSize = GetPrimaryScreenSize();
-            
-            // Calculate DPI scale factor
-            float dpiScale = systemDpi / 96.0f;
-            
-            // Determine base icon size based on screen resolution
-            int baseIconSize;
-            if (screenSize.Width >= 3840) {
-                // 4K screens
-                baseIconSize = 32;
-            } else if (screenSize.Width >= 2560) {
-                // 2K/QHD screens
-                baseIconSize = 28;
-            } else if (screenSize.Width >= 1920) {
-                // 1080p/FHD screens
-                baseIconSize = 24;
-            } else {
-                // Lower resolution screens
-                baseIconSize = 20;
-            }
-            
-            // Apply DPI scaling
-            int iconSize = (int)(baseIconSize * dpiScale);
-            
-            // Ensure reasonable bounds
-            if (iconSize < 20) iconSize = 20;
-            if (iconSize > 48) iconSize = 48;
-            
-            // Font size - larger proportion for better visibility (70-75% of icon)
-            int fontSize = (int)(iconSize * 0.72);
-            if (fontSize < 14) fontSize = 14;
-            if (fontSize > 36) fontSize = 36;
+            // Use fixed 32x32 icon size - Windows will scale it appropriately for the taskbar
+            // This works consistently across all DPI settings
+            int iconSize = 32;
+            int fontSize = 20; // Fixed font size for 32x32 icon
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
@@ -588,33 +558,6 @@ namespace SimpleBrightness
                 int y = (iconSize - textSize.Height) / 2 + 1;
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                 return Icon.FromHandle(bmp.GetHicon());
-            }
-        }
-        
-        private static int GetSystemDpi()
-        {
-            try
-            {
-                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
-                {
-                    return (int)g.DpiX;
-                }
-            }
-            catch
-            {
-                return 96;
-            }
-        }
-        
-        private static Size GetPrimaryScreenSize()
-        {
-            try
-            {
-                return Screen.PrimaryScreen.Bounds.Size;
-            }
-            catch
-            {
-                return new Size(1920, 1080);
             }
         }
     }
@@ -760,15 +703,14 @@ namespace SimpleBrightness
                     // Add gap between monitors
                     int currentY = startY + (i * (itemHeight + monitorGap));
                     
-                    // Vertical center of the item
+                    // Vertical center of the item - all elements align to this center line
                     int centerY = currentY + itemHeight / 2;
                     int barTop = centerY - barHeight / 2;
-                    int valY = centerY - 10;  // Half of 20px text height
 
-                    // Draw brightness icon - use EC8A
+                    // Draw brightness icon - use EC8A, vertically centered
                     Size iconTextSize = TextRenderer.MeasureText("\uEC8A", iconFont);
                     int iconDrawX = iconX + (iconWidth - iconTextSize.Width) / 2;  // Center in iconWidth space
-                    int iconDrawY = centerY - iconTextSize.Height / 2;
+                    int iconDrawY = centerY - iconTextSize.Height / 2;  // Vertically center with bar
                     TextRenderer.DrawText(g, "\uEC8A", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
 
                     // Progress bar - 6px height with rounded corners
@@ -787,13 +729,14 @@ namespace SimpleBrightness
                         }
                     }
 
-                    // Value text (no % symbol, centered vertically and horizontally)
+                    // Value text - vertically centered with the bar using TextRenderer
                     using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
-                    using (Brush valBrush = new SolidBrush(_textColor))
                     {
-                        Rectangle valRect = new Rectangle(valX, valY, valWidth, 18);
-                        StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                        g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
+                        string valText = brightness.ToString();
+                        Size valTextSize = TextRenderer.MeasureText(valText, valFont);
+                        int valDrawX = valX + (valWidth - valTextSize.Width) / 2;  // Center in valWidth
+                        int valDrawY = centerY - valTextSize.Height / 2;  // Vertically center with bar
+                        TextRenderer.DrawText(g, valText, valFont, new Point(valDrawX, valDrawY), _textColor);
                     }
                 }
             }
@@ -1044,8 +987,12 @@ namespace SimpleBrightness
             };
             panel.Controls.Add(lblHotkeyTitle);
             
+            // Hotkey capture controls
+            string capturedIncrease = config.HotkeyIncrease;
+            string capturedDecrease = config.HotkeyDecrease;
+            
             Label lblHotkeyIncrease = new Label { 
-                Text = "增加亮度快捷键:", 
+                Text = "增加亮度快捷键 (点击输入框后按快捷键):", 
                 AutoSize = true, 
                 Font = new Font("Segoe UI Variable Text", 9),
                 ForeColor = ThemeManager.TextSecondary,
@@ -1053,19 +1000,19 @@ namespace SimpleBrightness
             };
             panel.Controls.Add(lblHotkeyIncrease);
             
-            TextBox txtHotkeyIncrease = new TextBox { 
+            HotkeyCaptureBox txtHotkeyIncrease = new HotkeyCaptureBox { 
                 Width = 320, 
-                Text = config.HotkeyIncrease,
+                Hotkey = config.HotkeyIncrease,
                 Margin = new Padding(0, 0, 0, 15),
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text,
-                BorderStyle = BorderStyle.FixedSingle,
                 Font = new Font("Segoe UI", 10)
             };
+            txtHotkeyIncrease.HotkeyChanged += (hk) => capturedIncrease = hk;
             panel.Controls.Add(txtHotkeyIncrease);
             
             Label lblHotkeyDecrease = new Label { 
-                Text = "降低亮度快捷键:", 
+                Text = "降低亮度快捷键 (点击输入框后按快捷键):", 
                 AutoSize = true, 
                 Font = new Font("Segoe UI Variable Text", 9),
                 ForeColor = ThemeManager.TextSecondary,
@@ -1073,25 +1020,16 @@ namespace SimpleBrightness
             };
             panel.Controls.Add(lblHotkeyDecrease);
             
-            TextBox txtHotkeyDecrease = new TextBox { 
+            HotkeyCaptureBox txtHotkeyDecrease = new HotkeyCaptureBox { 
                 Width = 320, 
-                Text = config.HotkeyDecrease,
+                Hotkey = config.HotkeyDecrease,
                 Margin = new Padding(0, 0, 0, 15),
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text,
-                BorderStyle = BorderStyle.FixedSingle,
                 Font = new Font("Segoe UI", 10)
             };
+            txtHotkeyDecrease.HotkeyChanged += (hk) => capturedDecrease = hk;
             panel.Controls.Add(txtHotkeyDecrease);
-            
-            Label lblHotkeyHint = new Label { 
-                Text = "格式: Ctrl+F5, Alt+F6, Ctrl+Shift+F7 等", 
-                AutoSize = true, 
-                Font = new Font("Segoe UI Variable Text", 8),
-                ForeColor = ThemeManager.TextSecondary,
-                Margin = new Padding(0, 0, 0, 20)
-            };
-            panel.Controls.Add(lblHotkeyHint);
 
             Win11Button btnClearHidden = new Win11Button { 
                 Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", 
@@ -1118,8 +1056,8 @@ namespace SimpleBrightness
                 config.DebounceTime = (int)numDelay.Value; 
                 config.UseSoftwarePower = (cmbPower.SelectedIndex == 1);
                 // Save hotkeys
-                string newIncrease = txtHotkeyIncrease.Text.Trim();
-                string newDecrease = txtHotkeyDecrease.Text.Trim();
+                string newIncrease = capturedIncrease;
+                string newDecrease = capturedDecrease;
                 if (newIncrease != config.HotkeyIncrease || newDecrease != config.HotkeyDecrease)
                 {
                     this.HotkeysChanged = true;
@@ -1478,6 +1416,9 @@ namespace SimpleBrightness
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
+            
+            // Ensure form gets focus for keyboard events
+            this.Load += (s, e) => this.Focus();
             
             // Title label at top (outside panels)
             Label title = new Label { 
@@ -2096,4 +2037,175 @@ namespace SimpleBrightness
     
     // OsdForm (Placeholder)
     public class OsdForm : Form { public OsdForm(string n) { } public void UpdateName(string n) { } public void ShowOSD(int v, bool d, int r, int x, int y) { } }
+
+    // ================== Hotkey Capture Box ==================
+    public class HotkeyCaptureBox : TextBox
+    {
+        private bool _isCapturing = false;
+        private string _hotkey = "";
+        
+        public string Hotkey
+        {
+            get => _hotkey;
+            set
+            {
+                _hotkey = value;
+                this.Text = string.IsNullOrEmpty(value) ? "点击此处按快捷键..." : value;
+            }
+        }
+        
+        public event Action<string>? HotkeyChanged;
+        
+        public HotkeyCaptureBox()
+        {
+            this.ReadOnly = true;
+            this.Text = "点击此处按快捷键...";
+            this.BackColor = ThemeManager.Surface;
+            this.ForeColor = ThemeManager.Text;
+            this.BorderStyle = BorderStyle.FixedSingle;
+            this.Cursor = Cursors.Hand;
+            
+            this.Enter += (s, e) => StartCapture();
+            this.Leave += (s, e) => StopCapture();
+            this.KeyDown += HotkeyCaptureBox_KeyDown;
+            this.KeyUp += HotkeyCaptureBox_KeyUp;
+        }
+        
+        private void StartCapture()
+        {
+            _isCapturing = true;
+            this.Text = "请按下快捷键...";
+            this.BackColor = Color.FromArgb(60, 60, 80);
+        }
+        
+        private void StopCapture()
+        {
+            _isCapturing = false;
+            this.Text = string.IsNullOrEmpty(_hotkey) ? "点击此处按快捷键..." : _hotkey;
+            this.BackColor = ThemeManager.Surface;
+        }
+        
+        private void HotkeyCaptureBox_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (!_isCapturing) return;
+            
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            
+            // Build hotkey string
+            List<string> parts = new List<string>();
+            
+            if (e.Control) parts.Add("Ctrl");
+            if (e.Alt) parts.Add("Alt");
+            if (e.Shift) parts.Add("Shift");
+            
+            // Get the key (ignore modifiers)
+            Keys keyCode = e.KeyCode;
+            if (keyCode != Keys.ControlKey && keyCode != Keys.ShiftKey && keyCode != Keys.Menu &&
+                keyCode != Keys.LControlKey && keyCode != Keys.RControlKey &&
+                keyCode != Keys.LShiftKey && keyCode != Keys.RShiftKey &&
+                keyCode != Keys.LMenu && keyCode != Keys.RMenu)
+            {
+                string keyName = keyCode.ToString();
+                
+                // Convert function keys
+                if (keyCode >= Keys.F1 && keyCode <= Keys.F24)
+                {
+                    parts.Add(keyName);
+                }
+                // Convert number keys
+                else if (keyCode >= Keys.D0 && keyCode <= Keys.D9)
+                {
+                    parts.Add(keyName.Replace("D", ""));
+                }
+                // Convert letter keys
+                else if (keyCode >= Keys.A && keyCode <= Keys.Z)
+                {
+                    parts.Add(keyName);
+                }
+                // Other allowed keys
+                else if (keyCode == Keys.Space)
+                {
+                    parts.Add("Space");
+                }
+                else if (keyCode == Keys.Up || keyCode == Keys.Down || keyCode == Keys.Left || keyCode == Keys.Right)
+                {
+                    parts.Add(keyName);
+                }
+                else if (keyCode == Keys.PageUp || keyCode == Keys.PageDown)
+                {
+                    parts.Add(keyName);
+                }
+                else if (keyCode == Keys.Home || keyCode == Keys.End)
+                {
+                    parts.Add(keyName);
+                }
+                else if (keyCode == Keys.Insert || keyCode == Keys.Delete)
+                {
+                    parts.Add(keyName);
+                }
+                else if (keyCode == Keys.Oemtilde)
+                {
+                    parts.Add("`");
+                }
+                else if (keyCode == Keys.OemMinus)
+                {
+                    parts.Add("-");
+                }
+                else if (keyCode == Keys.Oemplus)
+                {
+                    parts.Add("=");
+                }
+                else if (keyCode == Keys.OemOpenBrackets)
+                {
+                    parts.Add("[");
+                }
+                else if (keyCode == Keys.OemCloseBrackets)
+                {
+                    parts.Add("]");
+                }
+                else if (keyCode == Keys.OemPipe)
+                {
+                    parts.Add("\\");
+                }
+                else if (keyCode == Keys.OemSemicolon)
+                {
+                    parts.Add(";");
+                }
+                else if (keyCode == Keys.OemQuotes)
+                {
+                    parts.Add("'");
+                }
+                else if (keyCode == Keys.Oemcomma)
+                {
+                    parts.Add(",");
+                }
+                else if (keyCode == Keys.OemPeriod)
+                {
+                    parts.Add(".");
+                }
+                else if (keyCode == Keys.OemQuestion)
+                {
+                    parts.Add("/");
+                }
+                
+                if (parts.Count > 0)
+                {
+                    _hotkey = string.Join("+", parts);
+                    this.Text = _hotkey;
+                    HotkeyChanged?.Invoke(_hotkey);
+                    
+                    // Stop capturing after valid key
+                    this.Parent?.Focus();
+                }
+            }
+        }
+        
+        private void HotkeyCaptureBox_KeyUp(object? sender, KeyEventArgs e)
+        {
+            if (!_isCapturing) return;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+    }
 }
