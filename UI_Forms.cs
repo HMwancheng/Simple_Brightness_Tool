@@ -541,73 +541,25 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Create a multi-resolution icon
-            // Windows will select the appropriate size based on DPI
-            using (MemoryStream ms = new MemoryStream())
-            {
-                // Create ICO file with multiple sizes
-                using (BinaryWriter writer = new BinaryWriter(ms))
-                {
-                    // ICO header
-                    writer.Write((short)0); // Reserved
-                    writer.Write((short)1); // Type: icon
-                    writer.Write((short)2); // Count: 2 images (16x16 and 32x32)
-                    
-                    // Image 1: 16x16
-                    writer.Write((byte)16); // Width
-                    writer.Write((byte)16); // Height
-                    writer.Write((byte)0); // Colors (0 = >256)
-                    writer.Write((byte)0); // Reserved
-                    writer.Write((short)1); // Color planes
-                    writer.Write((short)32); // Bits per pixel
-                    
-                    byte[] icon16 = CreateIconImage(16, 8);
-                    writer.Write(icon16.Length); // Size
-                    writer.Write(22); // Offset (header size)
-                    
-                    // Image 2: 32x32
-                    writer.Write((byte)32); // Width
-                    writer.Write((byte)32); // Height
-                    writer.Write((byte)0); // Colors (0 = >256)
-                    writer.Write((byte)0); // Reserved
-                    writer.Write((short)1); // Color planes
-                    writer.Write((short)32); // Bits per pixel
-                    
-                    byte[] icon32 = CreateIconImage(32, 16);
-                    writer.Write(icon32.Length); // Size
-                    writer.Write(22 + icon16.Length); // Offset
-                    
-                    // Write image data
-                    writer.Write(icon16);
-                    writer.Write(icon32);
-                }
-                
-                ms.Position = 0;
-                return new Icon(ms);
-            }
-        }
-        
-        private static byte[] CreateIconImage(int size, int fontSize)
-        {
-            using (Bitmap bmp = new Bitmap(size, size))
-            using (Graphics g = Graphics.FromImage(bmp))
-            {
+            // Create 32x32 icon - Windows will scale appropriately
+            int iconSize = 32;
+            int fontSize = 16;
+
+            using (Bitmap bmp = new Bitmap(iconSize, iconSize))
+            using (Graphics g = Graphics.FromImage(bmp)) {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 g.Clear(Color.Transparent);
 
                 Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
                 Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
-                int x = (size - textSize.Width) / 2;
-                int y = (size - textSize.Height) / 2;
+                int x = (iconSize - textSize.Width) / 2;
+                int y = (iconSize - textSize.Height) / 2;
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                 
-                // Convert to PNG for better quality in icon
-                using (MemoryStream pngStream = new MemoryStream())
-                {
-                    bmp.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
-                    return pngStream.ToArray();
-                }
+                IntPtr hIcon = bmp.GetHicon();
+                Icon icon = Icon.FromHandle(hIcon);
+                return icon;
             }
         }
     }
