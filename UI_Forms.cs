@@ -886,7 +886,11 @@ namespace SimpleBrightness
     }
 
     // ================== SettingsForm (with Scroll Support and Theme Selection) ==================
-    public class SettingsForm : Form { 
+    public class SettingsForm : Form {
+        public bool HotkeysChanged { get; private set; } = false;
+        public string NewHotkeyIncrease { get; private set; } = "";
+        public string NewHotkeyDecrease { get; private set; } = "";
+        
         public SettingsForm(AppConfig config) { 
             this.Text = "设置"; 
             // Increased default size
@@ -1030,6 +1034,65 @@ namespace SimpleBrightness
             cmbPower.SelectedIndex = config.UseSoftwarePower ? 1 : 0;
             panel.Controls.Add(cmbPower);
 
+            // Hotkey Configuration
+            Label lblHotkeyTitle = new Label { 
+                Text = "快捷键设置:", 
+                AutoSize = true, 
+                Font = new Font("Segoe UI Variable Text", 10, FontStyle.Bold),
+                ForeColor = ThemeManager.Text,
+                Margin = new Padding(0, 10, 0, 10)
+            };
+            panel.Controls.Add(lblHotkeyTitle);
+            
+            Label lblHotkeyIncrease = new Label { 
+                Text = "增加亮度快捷键:", 
+                AutoSize = true, 
+                Font = new Font("Segoe UI Variable Text", 9),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 5)
+            };
+            panel.Controls.Add(lblHotkeyIncrease);
+            
+            TextBox txtHotkeyIncrease = new TextBox { 
+                Width = 320, 
+                Text = config.HotkeyIncrease,
+                Margin = new Padding(0, 0, 0, 15),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 10)
+            };
+            panel.Controls.Add(txtHotkeyIncrease);
+            
+            Label lblHotkeyDecrease = new Label { 
+                Text = "降低亮度快捷键:", 
+                AutoSize = true, 
+                Font = new Font("Segoe UI Variable Text", 9),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 5)
+            };
+            panel.Controls.Add(lblHotkeyDecrease);
+            
+            TextBox txtHotkeyDecrease = new TextBox { 
+                Width = 320, 
+                Text = config.HotkeyDecrease,
+                Margin = new Padding(0, 0, 0, 15),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI", 10)
+            };
+            panel.Controls.Add(txtHotkeyDecrease);
+            
+            Label lblHotkeyHint = new Label { 
+                Text = "格式: Ctrl+F5, Alt+F6, Ctrl+Shift+F7 等", 
+                AutoSize = true, 
+                Font = new Font("Segoe UI Variable Text", 8),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 20)
+            };
+            panel.Controls.Add(lblHotkeyHint);
+
             Win11Button btnClearHidden = new Win11Button { 
                 Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", 
                 Width = 350, 
@@ -1054,6 +1117,17 @@ namespace SimpleBrightness
                 config.ScrollStep = (int)numStep.Value; 
                 config.DebounceTime = (int)numDelay.Value; 
                 config.UseSoftwarePower = (cmbPower.SelectedIndex == 1);
+                // Save hotkeys
+                string newIncrease = txtHotkeyIncrease.Text.Trim();
+                string newDecrease = txtHotkeyDecrease.Text.Trim();
+                if (newIncrease != config.HotkeyIncrease || newDecrease != config.HotkeyDecrease)
+                {
+                    this.HotkeysChanged = true;
+                    this.NewHotkeyIncrease = newIncrease;
+                    this.NewHotkeyDecrease = newDecrease;
+                }
+                config.HotkeyIncrease = newIncrease;
+                config.HotkeyDecrease = newDecrease;
                 // Save theme mode
                 config.ThemeMode = cmbTheme.SelectedIndex switch {
                     0 => ThemeMode.Light,

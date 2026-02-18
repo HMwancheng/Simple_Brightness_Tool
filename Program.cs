@@ -48,6 +48,9 @@ namespace SimpleBrightness
         private bool _isDebugMode = false;
         private IntPtr _trayIconHandle = IntPtr.Zero;
         private uint _trayIconId = 0;
+        private GlobalHotkey? _hotkeyIncrease;
+        private GlobalHotkey? _hotkeyDecrease;
+        private Form? _hotkeyWindow;
 
         public MyCustomApplicationContext()
         {
@@ -82,6 +85,7 @@ namespace SimpleBrightness
             contextMenu.Items.Add("退出", null, (s, e) => {
                 SaveAllSettings();
                 mouseHook?.Uninstall();
+                UnregisterHotkeys();
                 trayIcon.Visible = false;
                 Application.Exit(); 
             });
@@ -104,6 +108,92 @@ namespace SimpleBrightness
             mouseHook = new MouseHook();
             mouseHook.MouseWheel += OnGlobalMouseWheel;
             mouseHook.Install();
+            
+            // Register global hotkeys
+            RegisterHotkeys();
+        }
+        
+        private void RegisterHotkeys()
+        {
+            // Create a hidden window for hotkey messages
+            _hotkeyWindow = new Form
+            {
+                Width = 0,
+                Height = 0,
+                ShowInTaskbar = false,
+                WindowState = FormWindowState.Minimized,
+                FormBorderStyle = FormBorderStyle.None
+            };
+            _hotkeyWindow.Show();
+            _hotkeyWindow.Hide();
+            
+            // Hook into the window message loop
+            _hotkeyWindow.Load += (s, e) => {};
+            
+            // Register increase brightness hotkey
+            _hotkeyIncrease = new GlobalHotkey(_hotkeyWindow.Handle);
+            _hotkeyIncrease.HotkeyPressed += (s, e) => AdjustBrightnessByHotkey(true);
+            if (!_hotkeyIncrease.Register(config.HotkeyIncrease, 1))
+            {
+                Console.WriteLine($"Failed to register increase hotkey: {config.HotkeyIncrease}");
+            }
+            
+            // Register decrease brightness hotkey
+            _hotkeyDecrease = new GlobalHotkey(_hotkeyWindow.Handle);
+            _hotkeyDecrease.HotkeyPressed += (s, e) => AdjustBrightnessByHotkey(false);
+            if (!_hotkeyDecrease.Register(config.HotkeyDecrease, 2))
+            {
+                Console.WriteLine($"Failed to register decrease hotkey: {config.HotkeyDecrease}");
+            }
+            
+            // Hook window messages
+            _hotkeyWindow.KeyPreview = true;
+        }
+        
+        private void UnregisterHotkeys()
+        {
+            _hotkeyIncrease?.Dispose();
+            _hotkeyDecrease?.Dispose();
+            _hotkeyIncrease = null;
+            _hotkeyDecrease = null;
+            _hotkeyWindow?.Close();
+            _hotkeyWindow = null;
+        }
+        
+        public void ReloadHotkeys()
+        {
+            UnregisterHotkeys();
+            RegisterHotkeys();
+        }
+        
+        private void AdjustBrightnessByHotkey(bool increase)
+        {
+            int step = config.ScrollStep;
+            if (!increase) step = -step;
+            
+            foreach (var monitor in monitors)
+            {
+                int newValue = monitor.LastBrightness + step;
+                newValue = Math.Max(0, Math.Min(100, newValue));
+                
+                if (_isDebugMode)
+                {
+                    SetBrightnessDirect(monitor, newValue);
+                }
+                else
+                {
+                    var curve = config.GetCurveForMonitor(monitor.UniqueId);
+                    int target = ApplyCurve(newValue, curve);
+                    SetBrightnessDirect(monitor, target);
+                }
+                monitor.LastBrightness = newValue;
+            }
+            
+            // Show OSD
+            ShowOsd();
+            
+            // Save settings
+            SaveAllSettings();
         }
 
         private void OpenUrl(string url)
@@ -630,7 +720,19 @@ namespace SimpleBrightness
             foreach(var m in monitors) form.UpdateSlider(m.UniqueId, m.LastBrightness);
         }
 
-        private void ShowSettings() { var form = new SettingsForm(config); form.Show(); }
+        private void ShowSettings() 
+        { 
+            var form = new SettingsForm(config); 
+            form.FormClosed += (s, e) => 
+            {
+                if (form.HotkeysChanged)
+                {
+                    // Reload hotkeys if changed
+                    ReloadHotkeys();
+                }
+            };
+            form.Show(); 
+        }
 
         // 配置迁移：将旧版ID格式的配置迁移到新版
         private void MigrateOldConfig()
