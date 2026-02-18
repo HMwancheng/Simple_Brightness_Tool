@@ -541,10 +541,10 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Use fixed 32x32 icon size - Windows will scale it appropriately for the taskbar
-            // This works consistently across all DPI settings
-            int iconSize = 32;
-            int fontSize = 20; // Fixed font size for 32x32 icon
+            // Use 16x16 icon size - Windows standard for notification area
+            // Windows will automatically scale for different DPI settings
+            int iconSize = 16;
+            int fontSize = 10; // Smaller font for 16x16 icon
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
@@ -555,7 +555,7 @@ namespace SimpleBrightness
                 Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
                 Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
                 int x = (iconSize - textSize.Width) / 2;
-                int y = (iconSize - textSize.Height) / 2 + 1;
+                int y = (iconSize - textSize.Height) / 2;
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                 return Icon.FromHandle(bmp.GetHicon());
             }
@@ -707,10 +707,10 @@ namespace SimpleBrightness
                     int centerY = currentY + itemHeight / 2;
                     int barTop = centerY - barHeight / 2;
 
-                    // Draw brightness icon - use EC8A, vertically centered
+                    // Draw brightness icon - use EC8A, vertically centered (moved down 1px)
                     Size iconTextSize = TextRenderer.MeasureText("\uEC8A", iconFont);
                     int iconDrawX = iconX + (iconWidth - iconTextSize.Width) / 2;  // Center in iconWidth space
-                    int iconDrawY = centerY - iconTextSize.Height / 2;  // Vertically center with bar
+                    int iconDrawY = centerY - iconTextSize.Height / 2 + 1;  // Vertically center with bar, +1px down
                     TextRenderer.DrawText(g, "\uEC8A", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
 
                     // Progress bar - 6px height with rounded corners
@@ -991,26 +991,6 @@ namespace SimpleBrightness
             string capturedIncrease = config.HotkeyIncrease;
             string capturedDecrease = config.HotkeyDecrease;
             
-            Label lblHotkeyIncrease = new Label { 
-                Text = "增加亮度快捷键 (点击输入框后按快捷键):", 
-                AutoSize = true, 
-                Font = new Font("Segoe UI Variable Text", 9),
-                ForeColor = ThemeManager.TextSecondary,
-                Margin = new Padding(0, 0, 0, 5)
-            };
-            panel.Controls.Add(lblHotkeyIncrease);
-            
-            HotkeyCaptureBox txtHotkeyIncrease = new HotkeyCaptureBox { 
-                Width = 320, 
-                Hotkey = config.HotkeyIncrease,
-                Margin = new Padding(0, 0, 0, 15),
-                BackColor = ThemeManager.Surface,
-                ForeColor = ThemeManager.Text,
-                Font = new Font("Segoe UI", 10)
-            };
-            txtHotkeyIncrease.HotkeyChanged += (hk) => capturedIncrease = hk;
-            panel.Controls.Add(txtHotkeyIncrease);
-            
             Label lblHotkeyDecrease = new Label { 
                 Text = "降低亮度快捷键 (点击输入框后按快捷键):", 
                 AutoSize = true, 
@@ -1030,6 +1010,26 @@ namespace SimpleBrightness
             };
             txtHotkeyDecrease.HotkeyChanged += (hk) => capturedDecrease = hk;
             panel.Controls.Add(txtHotkeyDecrease);
+            
+            Label lblHotkeyIncrease = new Label { 
+                Text = "增加亮度快捷键 (点击输入框后按快捷键):", 
+                AutoSize = true, 
+                Font = new Font("Segoe UI Variable Text", 9),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 5)
+            };
+            panel.Controls.Add(lblHotkeyIncrease);
+            
+            HotkeyCaptureBox txtHotkeyIncrease = new HotkeyCaptureBox { 
+                Width = 320, 
+                Hotkey = config.HotkeyIncrease,
+                Margin = new Padding(0, 0, 0, 15),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI", 10)
+            };
+            txtHotkeyIncrease.HotkeyChanged += (hk) => capturedIncrease = hk;
+            panel.Controls.Add(txtHotkeyIncrease);
 
             Win11Button btnClearHidden = new Win11Button { 
                 Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", 
