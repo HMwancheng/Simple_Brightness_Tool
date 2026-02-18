@@ -116,18 +116,18 @@ namespace SimpleBrightness
             // Create a native message window for hotkey messages
             _hotkeyWindow = new HotkeyMessageWindow();
             _hotkeyWindow.HotkeyPressed += (hotkeyId) => {
-                // hotkeyId 1 = decrease (F5), hotkeyId 2 = increase (F6)
-                if (hotkeyId == 1) AdjustBrightnessByHotkey(false);
-                else if (hotkeyId == 2) AdjustBrightnessByHotkey(true);
+                // hotkeyId 1 = increase, hotkeyId 2 = decrease
+                if (hotkeyId == 1) AdjustBrightnessByHotkey(true);
+                else if (hotkeyId == 2) AdjustBrightnessByHotkey(false);
             };
             
-            // Register increase brightness hotkey
+            // Register increase brightness hotkey with ID 1
             if (!_hotkeyWindow.RegisterHotkey(config.HotkeyIncrease, 1))
             {
                 Console.WriteLine($"Failed to register increase hotkey: {config.HotkeyIncrease}");
             }
             
-            // Register decrease brightness hotkey
+            // Register decrease brightness hotkey with ID 2
             if (!_hotkeyWindow.RegisterHotkey(config.HotkeyDecrease, 2))
             {
                 Console.WriteLine($"Failed to register decrease hotkey: {config.HotkeyDecrease}");

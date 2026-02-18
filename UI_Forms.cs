@@ -1406,100 +1406,162 @@ namespace SimpleBrightness
             _points = new Dictionary<int, int>(GetCurveWithFallback());
             _tooltip = new ToolTip();
             
-            this.Size = new Size(850, 650);
+            this.Size = new Size(900, 700);
             this.BackColor = ThemeManager.Background;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Text = "曲线编辑器";
             this.ForeColor = ThemeManager.Text;
-            this.KeyPreview = true; // Enable key preview for arrow keys
+            this.KeyPreview = true;
             
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Ensure form gets focus for keyboard events
-            this.Load += (s, e) => this.Focus();
+            // Main TableLayoutPanel
+            TableLayoutPanel mainTable = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                RowCount = 3,
+                ColumnCount = 1,
+                BackColor = ThemeManager.Background
+            };
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
+            this.Controls.Add(mainTable);
             
-            // Title label at top (outside panels)
+            // Top panel
+            Panel topPanel = new Panel {
+                Dock = DockStyle.Fill,
+                BackColor = ThemeManager.Surface,
+                Padding = new Padding(20, 15, 20, 10)
+            };
+            mainTable.Controls.Add(topPanel, 0, 0);
+            
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
-                Location = new Point(20, 15), 
+                Location = new Point(0, 0), 
                 AutoSize = true, 
                 ForeColor = ThemeManager.Text,
                 Font = new Font("Segoe UI Variable Display", 14)
             };
-            this.Controls.Add(title);
+            topPanel.Controls.Add(title);
             
-            // Description label at bottom (outside panels, left aligned)
+            Label lblInfo = new Label {
+                Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调(↑↓输出 ←→输入) | Ctrl+Z撤销 | 右键删除",
+                Location = new Point(0, 30),
+                AutoSize = true,
+                ForeColor = ThemeManager.Accent,
+                Font = new Font("Segoe UI", 9)
+            };
+            topPanel.Controls.Add(lblInfo);
+            
+            // Graph control
+            _graph = new CurveGraphControl(_points, monitor, config) {
+                Dock = DockStyle.Fill,
+                BackColor = ThemeManager.Background
+            };
+            mainTable.Controls.Add(_graph, 0, 1);
+            
+            // Bottom panel
+            Panel bottomPanel = new Panel {
+                Dock = DockStyle.Fill,
+                BackColor = ThemeManager.Surface,
+                Padding = new Padding(20)
+            };
+            mainTable.Controls.Add(bottomPanel, 0, 2);
+            
+            // Bottom layout
+            TableLayoutPanel bottomTable = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                RowCount = 2,
+                ColumnCount = 3,
+                BackColor = ThemeManager.Surface
+            };
+            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
+            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+            bottomPanel.Controls.Add(bottomTable);
+            
             Label lblDesc = new Label {
                 Text = "💡 输入亮度 = 软件界面显示值  |  输出亮度 = 显示器实际亮度",
-                Location = new Point(20, this.ClientSize.Height - 75),
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary,
                 Font = new Font("Segoe UI", 9),
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+                Dock = DockStyle.Fill
             };
-            this.Controls.Add(lblDesc);
+            bottomTable.Controls.Add(lblDesc, 0, 0);
             
-            // Info label for interaction at bottom (outside panels, right aligned)
-            Label lblInfo = new Label {
-                Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调 | Ctrl+Z撤销 | 右键删除",
-                Location = new Point(this.ClientSize.Width - 420, this.ClientSize.Height - 75),
+            FlowLayoutPanel selectedPanel = new FlowLayoutPanel {
+                FlowDirection = FlowDirection.LeftToRight,
                 AutoSize = true,
-                ForeColor = ThemeManager.Accent,
-                Font = new Font("Segoe UI", 9),
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+                BackColor = ThemeManager.Surface,
+                Dock = DockStyle.Fill
             };
-            this.Controls.Add(lblInfo);
+            bottomTable.Controls.Add(selectedPanel, 1, 0);
             
-            // Graph control - fills all space between title and bottom labels
-            _graph = new CurveGraphControl(_points, monitor, config) {
-                Location = new Point(0, 35),
-                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 115),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-                BackColor = ThemeManager.Background
-            };
-            this.Controls.Add(_graph);
-            
-            // Bottom control panel
-            Panel bottomPanel = new Panel {
-                Dock = DockStyle.Bottom,
-                Height = 50,
-                BackColor = ThemeManager.Surface
-            };
-            this.Controls.Add(bottomPanel);
-            
-            // Selected point display (center of bottom panel)
             Label lblSelected = new Label {
                 Text = "选中节点:",
-                Location = new Point(250, 18),
                 AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 5, 5, 0)
             };
-            bottomPanel.Controls.Add(lblSelected);
+            selectedPanel.Controls.Add(lblSelected);
             
             Label lblSelectedValue = new Label {
                 Text = "无",
-                Location = new Point(315, 18),
                 AutoSize = true,
                 ForeColor = ThemeManager.Text,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Margin = new Padding(0, 5, 0, 0)
             };
-            bottomPanel.Controls.Add(lblSelectedValue);
+            selectedPanel.Controls.Add(lblSelectedValue);
             
-            // Key event handler for the form (after lblSelectedValue is declared)
+            FlowLayoutPanel controlsPanel = new FlowLayoutPanel {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                BackColor = ThemeManager.Surface,
+                Dock = DockStyle.Fill
+            };
+            bottomTable.Controls.Add(controlsPanel, 0, 1);
+            bottomTable.SetColumnSpan(controlsPanel, 2);
+            
+            CheckBox chkPreview = new CheckBox {
+                Text = "实时预览",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Checked = false,
+                Margin = new Padding(0, 8, 20, 0)
+            };
+            controlsPanel.Controls.Add(chkPreview);
+            
+            CheckBox chkUnlock = new CheckBox {
+                Text = "解锁 0%/100%",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Checked = false,
+                Margin = new Padding(0, 8, 20, 0)
+            };
+            controlsPanel.Controls.Add(chkUnlock);
+            
+            Win11Button saveBtn = new Win11Button { 
+                Text = "保存并生效", 
+                Size = new Size(120, 36),
+                BackColor = ThemeManager.Accent,
+                Dock = DockStyle.Right
+            };
+            bottomTable.Controls.Add(saveBtn, 2, 1);
+            
+            // Key event handler
             this.KeyDown += (s, e) => {
-                // Ctrl+Z for undo
+                if (!_graph.Focused && !_graph.IsCapturingKey) {
+                    _graph.Focus();
+                }
+                
                 if (e.Control && e.KeyCode == Keys.Z) {
                     _graph.Undo();
-                    // Refresh the display
-                    if (_graph.SelectedPoint.HasValue) {
+                    if (_graph.SelectedPoint.HasValue && _points.ContainsKey(_graph.SelectedPoint.Value)) {
                         int sx = _graph.SelectedPoint.Value;
-                        if (_points.ContainsKey(sx)) {
-                            lblSelectedValue.Text = $"输入{sx}% → 输出{_points[sx]}%";
-                        } else {
-                            lblSelectedValue.Text = "无";
-                        }
+                        lblSelectedValue.Text = $"输入{sx}% → 输出{_points[sx]}%";
                     } else {
                         lblSelectedValue.Text = "无";
                     }
@@ -1507,7 +1569,6 @@ namespace SimpleBrightness
                     return;
                 }
                 
-                // Arrow keys for adjusting selected point
                 if (_graph.SelectedPoint.HasValue) {
                     int x = _graph.SelectedPoint.Value;
                     if (!_points.ContainsKey(x)) return;
@@ -1536,6 +1597,7 @@ namespace SimpleBrightness
                                 if (!_points.ContainsKey(newX)) {
                                     _points.Remove(x);
                                     _points[newX] = y;
+                                    _graph.SetSelectedPoint(newX);
                                     lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
                                     _graph.Invalidate();
                                 }
@@ -1548,6 +1610,7 @@ namespace SimpleBrightness
                                 if (!_points.ContainsKey(newX)) {
                                     _points.Remove(x);
                                     _points[newX] = y;
+                                    _graph.SetSelectedPoint(newX);
                                     lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
                                     _graph.Invalidate();
                                 }
@@ -1559,8 +1622,6 @@ namespace SimpleBrightness
                         _points[x] = y;
                         lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
                         _graph.Invalidate();
-                        
-                        // Apply preview if enabled
                         if (_graph.EnablePreview) {
                             _graph.ApplyPreview(x, y);
                         }
@@ -1570,35 +1631,6 @@ namespace SimpleBrightness
                 }
             };
             
-            // Preview checkbox
-            CheckBox chkPreview = new CheckBox {
-                Text = "实时预览",
-                Location = new Point(20, 16),
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Checked = false
-            };
-            bottomPanel.Controls.Add(chkPreview);
-            
-            // Min/Max unlock checkbox
-            CheckBox chkUnlock = new CheckBox {
-                Text = "解锁 0%/100%",
-                Location = new Point(120, 16),
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Checked = false
-            };
-            bottomPanel.Controls.Add(chkUnlock);
-            
-            Win11Button saveBtn = new Win11Button { 
-                Text = "保存并生效", 
-                Location = new Point(700, 8), 
-                Size = new Size(120, 36),
-                BackColor = ThemeManager.Accent
-            };
-            bottomPanel.Controls.Add(saveBtn);
-            
-            // Event handlers
             saveBtn.Click += (s, e) => {
                 _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_points);
                 if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
@@ -1624,12 +1656,10 @@ namespace SimpleBrightness
                 _graph.EnablePreview = chkPreview.Checked;
             };
             
-            // Handle point selection from graph
             _graph.PointSelected += (x, y) => {
                 lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
             };
             
-            // Handle point deletion from graph
             _graph.PointDeleted += (x) => {
                 if (x != 0 && x != 100) {
                     _points.Remove(x);
@@ -1638,16 +1668,13 @@ namespace SimpleBrightness
                 }
             };
             
-            // Handle point added from graph
             _graph.PointAdded += (x, y) => {
                 _points[x] = y;
                 lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
                 _graph.Invalidate();
             };
             
-            // Handle undo from graph
             _graph.ActionUndone += () => {
-                // Refresh the display
                 if (_graph.SelectedPoint.HasValue) {
                     lblSelectedValue.Text = $"输入{_graph.SelectedPoint.Value}% → 输出{_points[_graph.SelectedPoint.Value]}%";
                 } else {
@@ -1655,7 +1682,6 @@ namespace SimpleBrightness
                 }
             };
             
-            // Ensure minimum points
             if (!_points.ContainsKey(0)) _points[0] = 0;
             if (!_points.ContainsKey(100)) _points[100] = 100;
         }
@@ -1683,6 +1709,16 @@ namespace SimpleBrightness
         public bool ShowMinMaxEdit { get; set; } = false;
         public bool EnablePreview { get; set; } = false;
         public int? SelectedPoint => _selectedPoint;
+        public bool IsCapturingKey => _isDragging;
+        
+        public void SetSelectedPoint(int x)
+        {
+            if (_points.ContainsKey(x))
+            {
+                _selectedPoint = x;
+                this.Invalidate();
+            }
+        }
         
         public event Action<int, int>? PointSelected;
         public event Action<int>? PointDeleted;
