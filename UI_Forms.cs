@@ -711,25 +711,22 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            // Auto-calculate layout with generous spacing
+            // Auto-calculate layout with equal margins
             int barHeight = 6;           // Progress bar height
-            int contentPadding = 20;     // Generous padding around content
+            int margin = 20;             // Equal margin on left and right
             int elementGap = 12;         // Gap between icon/bar/value
             int iconWidth = 24;          // Width allocated for icon
             int monitorGap = 16;         // Gap between monitors
+            int valWidth = 36;           // Width for value text
             
-            // Measure value text width for "100"
-            int valWidth = 36;           // Width for value text (reduced right padding)
-            int rightPadding = 12;       // Reduced right padding
+            // Calculate available width with equal left/right margins
+            int availableContentWidth = this.Width - (margin * 2);
+            int totalGaps = elementGap * 2;
+            int barWidth = availableContentWidth - iconWidth - totalGaps - valWidth;
             
-            // Calculate available width - center everything
-            int totalFixedWidth = iconWidth + (elementGap * 2) + valWidth + rightPadding;
-            int availableBarWidth = this.Width - (contentPadding * 2) - totalFixedWidth;
-            
-            // Calculate positions - centered layout
-            int iconX = contentPadding;
+            // Calculate positions - equal left/right margins
+            int iconX = margin;
             int barLeft = iconX + iconWidth + elementGap;
-            int barWidth = availableBarWidth;
             int valX = barLeft + barWidth + elementGap;
             
             // Auto-calculate item height with generous padding
@@ -737,7 +734,7 @@ namespace SimpleBrightness
             
             // Auto-calculate OSD height based on content with monitor gaps
             int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
-            int osdHeight = totalContentHeight + (contentPadding * 2);
+            int osdHeight = totalContentHeight + (margin * 2);
             
             // Resize OSD if needed (only if significantly different)
             if (Math.Abs(this.Height - osdHeight) > 10)
@@ -747,8 +744,8 @@ namespace SimpleBrightness
                 this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
             }
             
-            // Starting Y with generous padding
-            int startY = contentPadding;
+            // Starting Y with equal margin
+            int startY = margin;
             
             // Icon font for brightness symbol - use EC8A icon
             using (Font iconFont = new Font("Segoe MDL2 Assets", 16, FontStyle.Regular))
