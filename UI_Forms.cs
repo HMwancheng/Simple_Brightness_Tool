@@ -541,34 +541,40 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Get system metrics for proper icon sizing
+            // Get screen resolution and DPI for proper icon sizing
             int systemDpi = GetSystemDpi();
-            int taskbarHeight = GetTaskbarHeight();
+            Size screenSize = GetPrimaryScreenSize();
             
-            // Calculate appropriate icon size based on taskbar
-            // Windows typically uses 16x16, 20x20, 24x24, or 32x32
-            int iconSize;
-            if (taskbarHeight >= 60) {
-                iconSize = 32;  // Large taskbar
-            } else if (taskbarHeight >= 48) {
-                iconSize = 24;  // Medium taskbar (default on 1080p)
-            } else if (taskbarHeight >= 40) {
-                iconSize = 20;  // Small taskbar
+            // Calculate DPI scale factor
+            float dpiScale = systemDpi / 96.0f;
+            
+            // Determine base icon size based on screen resolution
+            int baseIconSize;
+            if (screenSize.Width >= 3840) {
+                // 4K screens
+                baseIconSize = 32;
+            } else if (screenSize.Width >= 2560) {
+                // 2K/QHD screens
+                baseIconSize = 28;
+            } else if (screenSize.Width >= 1920) {
+                // 1080p/FHD screens
+                baseIconSize = 24;
             } else {
-                iconSize = 16;  // Smallest
+                // Lower resolution screens
+                baseIconSize = 20;
             }
             
-            // Scale icon size based on DPI
-            float dpiScale = systemDpi / 96.0f;
-            iconSize = (int)(iconSize * dpiScale);
+            // Apply DPI scaling
+            int iconSize = (int)(baseIconSize * dpiScale);
             
-            // Ensure minimum size for visibility
-            if (iconSize < 16) iconSize = 16;
+            // Ensure reasonable bounds
+            if (iconSize < 20) iconSize = 20;
             if (iconSize > 48) iconSize = 48;
             
-            // Font size proportional to icon (about 60% of icon size)
-            int fontSize = (int)(iconSize * 0.6);
-            if (fontSize < 10) fontSize = 10;
+            // Font size - larger proportion for better visibility (70-75% of icon)
+            int fontSize = (int)(iconSize * 0.72);
+            if (fontSize < 14) fontSize = 14;
+            if (fontSize > 36) fontSize = 36;
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
@@ -600,28 +606,16 @@ namespace SimpleBrightness
             }
         }
         
-        private static int GetTaskbarHeight()
+        private static Size GetPrimaryScreenSize()
         {
             try
             {
-                // Get primary screen working area vs bounds to estimate taskbar size
-                Rectangle screenBounds = Screen.PrimaryScreen.Bounds;
-                Rectangle workingArea = Screen.PrimaryScreen.WorkingArea;
-                
-                // Taskbar is usually at the bottom
-                int taskbarHeight = screenBounds.Height - workingArea.Height;
-                if (taskbarHeight > 10 && taskbarHeight < 200)
-                    return taskbarHeight;
-                
-                // If that didn't work, check width (taskbar could be on side)
-                int taskbarWidth = screenBounds.Width - workingArea.Width;
-                if (taskbarWidth > 10 && taskbarWidth < 200)
-                    return taskbarWidth;
+                return Screen.PrimaryScreen.Bounds.Size;
             }
-            catch { }
-            
-            // Default values based on Windows version
-            return 48;  // Default Windows 10/11 taskbar height
+            catch
+            {
+                return new Size(1920, 1080);
+            }
         }
     }
 
@@ -717,26 +711,27 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            // Auto-calculate layout based on content
+            // Auto-calculate layout with generous spacing
             int barHeight = 6;           // Progress bar height
-            int contentPadding = 12;     // Minimal padding around content
-            int elementGap = 8;          // Gap between icon/bar/value
+            int contentPadding = 20;     // Generous padding around content
+            int elementGap = 12;         // Gap between icon/bar/value
+            int iconWidth = 24;          // Width allocated for icon
             
             // Measure value text width for "100"
-            int valWidth = 36;           // Width for value text
+            int valWidth = 40;           // Width for value text
             
-            // Calculate available width and distribute evenly
-            int availableWidth = this.Width - (contentPadding * 2);
-            int totalGap = elementGap * 2;  // Two gaps: icon-bar and bar-value
-            int barWidth = availableWidth - 20 - totalGap - valWidth;  // 20 for icon
+            // Calculate available width - center everything
+            int totalFixedWidth = iconWidth + (elementGap * 2) + valWidth;
+            int availableBarWidth = this.Width - (contentPadding * 2) - totalFixedWidth;
             
-            // Calculate positions for equal spacing
+            // Calculate positions - centered layout
             int iconX = contentPadding;
-            int barLeft = iconX + 20 + elementGap;
+            int barLeft = iconX + iconWidth + elementGap;
+            int barWidth = availableBarWidth;
             int valX = barLeft + barWidth + elementGap;
             
-            // Auto-calculate item height based on content (bar + minimal padding)
-            int itemHeight = barHeight + 16;  // 8px padding top and bottom
+            // Auto-calculate item height with generous padding
+            int itemHeight = barHeight + 24;  // 12px padding top and bottom
             
             // Auto-calculate OSD height based on content
             int totalContentHeight = (_monitors.Count * itemHeight);
@@ -750,11 +745,11 @@ namespace SimpleBrightness
                 this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
             }
             
-            // Starting Y with minimal padding
+            // Starting Y with generous padding
             int startY = contentPadding;
             
-            // Icon font for brightness symbol - use larger sun icon
-            using (Font iconFont = new Font("Segoe MDL2 Assets", 14, FontStyle.Regular))
+            // Icon font for brightness symbol - use small sun icon (E708)
+            using (Font iconFont = new Font("Segoe MDL2 Assets", 16, FontStyle.Regular))
             using (Brush iconBrush = new SolidBrush(_textColor))
             {
                 // Draw ALL monitors
@@ -767,13 +762,13 @@ namespace SimpleBrightness
                     // Vertical center of the item
                     int centerY = currentY + itemHeight / 2;
                     int barTop = centerY - barHeight / 2;
-                    int valY = centerY - 9;
+                    int valY = centerY - 10;  // Half of 20px text height
 
-                    // Draw brightness icon (sun) - use E706 for clear sun icon
-                    Size iconTextSize = TextRenderer.MeasureText("\uE706", iconFont);
-                    int iconDrawX = iconX + (20 - iconTextSize.Width) / 2;  // Center in 20px space
+                    // Draw brightness icon (small sun) - use E708
+                    Size iconTextSize = TextRenderer.MeasureText("\uE708", iconFont);
+                    int iconDrawX = iconX + (iconWidth - iconTextSize.Width) / 2;  // Center in iconWidth space
                     int iconDrawY = centerY - iconTextSize.Height / 2;
-                    TextRenderer.DrawText(g, "\uE706", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
+                    TextRenderer.DrawText(g, "\uE708", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
 
                     // Progress bar - 6px height with rounded corners
                     using (Brush trackBrush = new SolidBrush(_trackColor))
