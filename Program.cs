@@ -48,9 +48,7 @@ namespace SimpleBrightness
         private bool _isDebugMode = false;
         private IntPtr _trayIconHandle = IntPtr.Zero;
         private uint _trayIconId = 0;
-        private GlobalHotkey? _hotkeyIncrease;
-        private GlobalHotkey? _hotkeyDecrease;
-        private Form? _hotkeyWindow;
+        private HotkeyMessageWindow? _hotkeyWindow;
 
         public MyCustomApplicationContext()
         {
@@ -115,48 +113,29 @@ namespace SimpleBrightness
         
         private void RegisterHotkeys()
         {
-            // Create a hidden window for hotkey messages
-            _hotkeyWindow = new Form
-            {
-                Width = 0,
-                Height = 0,
-                ShowInTaskbar = false,
-                WindowState = FormWindowState.Minimized,
-                FormBorderStyle = FormBorderStyle.None
+            // Create a native message window for hotkey messages
+            _hotkeyWindow = new HotkeyMessageWindow();
+            _hotkeyWindow.HotkeyPressed += (hotkeyId) => {
+                if (hotkeyId == 1) AdjustBrightnessByHotkey(true);
+                else if (hotkeyId == 2) AdjustBrightnessByHotkey(false);
             };
-            _hotkeyWindow.Show();
-            _hotkeyWindow.Hide();
-            
-            // Hook into the window message loop
-            _hotkeyWindow.Load += (s, e) => {};
             
             // Register increase brightness hotkey
-            _hotkeyIncrease = new GlobalHotkey(_hotkeyWindow.Handle);
-            _hotkeyIncrease.HotkeyPressed += (s, e) => AdjustBrightnessByHotkey(true);
-            if (!_hotkeyIncrease.Register(config.HotkeyIncrease, 1))
+            if (!_hotkeyWindow.RegisterHotkey(config.HotkeyIncrease, 1))
             {
                 Console.WriteLine($"Failed to register increase hotkey: {config.HotkeyIncrease}");
             }
             
             // Register decrease brightness hotkey
-            _hotkeyDecrease = new GlobalHotkey(_hotkeyWindow.Handle);
-            _hotkeyDecrease.HotkeyPressed += (s, e) => AdjustBrightnessByHotkey(false);
-            if (!_hotkeyDecrease.Register(config.HotkeyDecrease, 2))
+            if (!_hotkeyWindow.RegisterHotkey(config.HotkeyDecrease, 2))
             {
                 Console.WriteLine($"Failed to register decrease hotkey: {config.HotkeyDecrease}");
             }
-            
-            // Hook window messages
-            _hotkeyWindow.KeyPreview = true;
         }
         
         private void UnregisterHotkeys()
         {
-            _hotkeyIncrease?.Dispose();
-            _hotkeyDecrease?.Dispose();
-            _hotkeyIncrease = null;
-            _hotkeyDecrease = null;
-            _hotkeyWindow?.Close();
+            _hotkeyWindow?.Dispose();
             _hotkeyWindow = null;
         }
         
@@ -961,52 +940,61 @@ namespace SimpleBrightness
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }
 
-    // ================== Global Hotkey Manager ==================
-    public class GlobalHotkey : IDisposable
+    // ================== Hotkey Message Window ==================
+    public class HotkeyMessageWindow : NativeWindow, IDisposable
     {
-        private IntPtr _windowHandle;
-        private int _hotkeyId = 0;
         private const int WM_HOTKEY = 0x0312;
+        private Dictionary<int, (uint modifiers, uint key)> _registeredHotkeys = new();
         
-        public event EventHandler? HotkeyPressed;
+        public event Action<int>? HotkeyPressed;
         
-        public GlobalHotkey(IntPtr windowHandle)
+        public HotkeyMessageWindow()
         {
-            _windowHandle = windowHandle;
+            // Create a message-only window
+            CreateHandle(new CreateParams
+            {
+                ExStyle = 0x80, // WS_EX_TOOLWINDOW (message-only window)
+                Style = 0x80000000, // WS_POPUP
+                Width = 0,
+                Height = 0
+            });
         }
         
-        public bool Register(string hotkeyString, int hotkeyId)
+        public bool RegisterHotkey(string hotkeyString, int hotkeyId)
         {
             if (string.IsNullOrEmpty(hotkeyString)) return false;
             
             var (modifiers, key) = ParseHotkey(hotkeyString);
             if (key == Keys.None) return false;
             
-            _hotkeyId = hotkeyId;
-            return RegisterHotKey(_windowHandle, hotkeyId, (uint)modifiers, (uint)key);
-        }
-        
-        public void Unregister()
-        {
-            if (_hotkeyId != 0)
+            bool result = RegisterHotKey(this.Handle, hotkeyId, modifiers, (uint)key);
+            if (result)
             {
-                UnregisterHotKey(_windowHandle, _hotkeyId);
-                _hotkeyId = 0;
+                _registeredHotkeys[hotkeyId] = (modifiers, (uint)key);
             }
+            return result;
         }
         
-        public void ProcessMessage(Message m)
+        public void UnregisterHotkey(int hotkeyId)
         {
-            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == _hotkeyId)
-            {
-                HotkeyPressed?.Invoke(this, EventArgs.Empty);
-            }
+            UnregisterHotKey(this.Handle, hotkeyId);
+            _registeredHotkeys.Remove(hotkeyId);
         }
         
-        private (ModifierKeys, Keys) ParseHotkey(string hotkeyString)
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_HOTKEY)
+            {
+                int hotkeyId = m.WParam.ToInt32();
+                HotkeyPressed?.Invoke(hotkeyId);
+            }
+            base.WndProc(ref m);
+        }
+        
+        private (uint, Keys) ParseHotkey(string hotkeyString)
         {
             var parts = hotkeyString.Split('+');
-            ModifierKeys modifiers = ModifierKeys.None;
+            uint modifiers = 0;
             Keys key = Keys.None;
             
             foreach (var part in parts)
@@ -1016,17 +1004,17 @@ namespace SimpleBrightness
                 {
                     case "ctrl":
                     case "control":
-                        modifiers |= ModifierKeys.Control;
+                        modifiers |= 0x0002; // MOD_CONTROL
                         break;
                     case "alt":
-                        modifiers |= ModifierKeys.Alt;
+                        modifiers |= 0x0001; // MOD_ALT
                         break;
                     case "shift":
-                        modifiers |= ModifierKeys.Shift;
+                        modifiers |= 0x0004; // MOD_SHIFT
                         break;
                     case "win":
                     case "windows":
-                        modifiers |= ModifierKeys.Win;
+                        modifiers |= 0x0008; // MOD_WIN
                         break;
                     default:
                         if (Enum.TryParse<Keys>(trimmed, true, out var parsedKey))
@@ -1042,7 +1030,11 @@ namespace SimpleBrightness
         
         public void Dispose()
         {
-            Unregister();
+            foreach (var hotkeyId in _registeredHotkeys.Keys.ToList())
+            {
+                UnregisterHotkey(hotkeyId);
+            }
+            DestroyHandle();
         }
         
         [DllImport("user32.dll")]
@@ -1050,16 +1042,6 @@ namespace SimpleBrightness
         
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-    }
-    
-    [Flags]
-    public enum ModifierKeys : uint
-    {
-        None = 0,
-        Alt = 1,
-        Control = 2,
-        Shift = 4,
-        Win = 8
     }
 
     public class MouseHook { private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam); private LowLevelMouseProc _proc; private IntPtr _hookID = IntPtr.Zero; public event MouseEventHandler? MouseWheel; public MouseHook() { _proc = HookCallback; } public void Install() { _hookID = SetWindowsHookEx(14, _proc, GetModuleHandle(System.Diagnostics.Process.GetCurrentProcess().MainModule?.ModuleName ?? "user32"), 0); } public void Uninstall() { UnhookWindowsHookEx(_hookID); } private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) { if (nCode >= 0 && (int)wParam == 0x020A) { MSLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam); short delta = (short)((hookStruct.mouseData >> 16) & 0xffff); MouseWheel?.Invoke(this, new MouseEventArgs(MouseButtons.None, 0, hookStruct.pt.x, hookStruct.pt.y, delta)); } return CallNextHookEx(_hookID, nCode, wParam, lParam); } [StructLayout(LayoutKind.Sequential)] private struct POINT { public int x; public int y; } [StructLayout(LayoutKind.Sequential)] private struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public IntPtr dwExtraInfo; } [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId); [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool UnhookWindowsHookEx(IntPtr hhk); [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam); [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr GetModuleHandle(string lpModuleName); }

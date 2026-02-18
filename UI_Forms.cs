@@ -1479,6 +1479,78 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
+            // Key event handler for the form
+            this.KeyDown += (s, e) => {
+                // Ctrl+Z for undo
+                if (e.Control && e.KeyCode == Keys.Z) {
+                    _graph.Undo();
+                    e.Handled = true;
+                    return;
+                }
+                
+                // Arrow keys for adjusting selected point
+                if (_graph.SelectedPoint.HasValue) {
+                    int x = _graph.SelectedPoint.Value;
+                    if (!_points.ContainsKey(x)) return;
+                    
+                    int y = _points[x];
+                    bool isFixed = (x == 0 || x == 100);
+                    bool modified = false;
+                    
+                    switch (e.KeyCode) {
+                        case Keys.Up:
+                            if (!isFixed || _showMinMaxUnlock) {
+                                y = Math.Min(100, y + 1);
+                                modified = true;
+                            }
+                            break;
+                        case Keys.Down:
+                            if (!isFixed || _showMinMaxUnlock) {
+                                y = Math.Max(0, y - 1);
+                                modified = true;
+                            }
+                            break;
+                        case Keys.Left:
+                            if (!isFixed) {
+                                _graph.SaveStateForUndo();
+                                int newX = Math.Max(1, x - 1);
+                                if (!_points.ContainsKey(newX)) {
+                                    _points.Remove(x);
+                                    _points[newX] = y;
+                                    lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
+                                    _graph.Invalidate();
+                                }
+                            }
+                            break;
+                        case Keys.Right:
+                            if (!isFixed) {
+                                _graph.SaveStateForUndo();
+                                int newX = Math.Min(99, x + 1);
+                                if (!_points.ContainsKey(newX)) {
+                                    _points.Remove(x);
+                                    _points[newX] = y;
+                                    lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
+                                    _graph.Invalidate();
+                                }
+                            }
+                            break;
+                    }
+                    
+                    if (modified) {
+                        _points[x] = y;
+                        lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
+                        _graph.Invalidate();
+                        
+                        // Apply preview if enabled
+                        if (_graph.EnablePreview) {
+                            _graph.ApplyPreview(x, y);
+                        }
+                    }
+                    
+                    e.Handled = true;
+                }
+            };
+            
             // Title label at top (outside panels)
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
@@ -1513,8 +1585,8 @@ namespace SimpleBrightness
             
             // Graph control - fills all space between title and bottom labels
             _graph = new CurveGraphControl(_points, monitor, config) {
-                Location = new Point(0, 50),
-                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 130),
+                Location = new Point(0, 35),
+                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 115),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
                 BackColor = ThemeManager.Background
             };
@@ -1678,7 +1750,7 @@ namespace SimpleBrightness
             this.KeyDown += CurveGraphControl_KeyDown;
         }
         
-        private void SaveStateForUndo() {
+        public void SaveStateForUndo() {
             // Save current state
             var stateCopy = new Dictionary<int, int>(_points);
             _undoStack.Push(stateCopy);
@@ -1705,80 +1777,7 @@ namespace SimpleBrightness
             }
         }
         
-        private void CurveGraphControl_KeyDown(object? sender, KeyEventArgs e) {
-            // Ctrl+Z for undo
-            if (e.Control && e.KeyCode == Keys.Z) {
-                Undo();
-                e.Handled = true;
-                return;
-            }
-            
-            // Arrow keys for adjusting selected point
-            if (_selectedPoint.HasValue) {
-                int x = _selectedPoint.Value;
-                if (!_points.ContainsKey(x)) return;
-                
-                int y = _points[x];
-                bool isFixed = (x == 0 || x == 100);
-                bool modified = false;
-                
-                switch (e.KeyCode) {
-                    case Keys.Up:
-                        if (!isFixed || ShowMinMaxEdit) {
-                            y = Math.Min(100, y + 1);
-                            modified = true;
-                        }
-                        break;
-                    case Keys.Down:
-                        if (!isFixed || ShowMinMaxEdit) {
-                            y = Math.Max(0, y - 1);
-                            modified = true;
-                        }
-                        break;
-                    case Keys.Left:
-                        if (!isFixed) {
-                            SaveStateForUndo();
-                            int newX = Math.Max(1, x - 1);
-                            if (!_points.ContainsKey(newX)) {
-                                _points.Remove(x);
-                                _points[newX] = y;
-                                _selectedPoint = newX;
-                                PointSelected?.Invoke(newX, y);
-                                this.Invalidate();
-                            }
-                        }
-                        break;
-                    case Keys.Right:
-                        if (!isFixed) {
-                            SaveStateForUndo();
-                            int newX = Math.Min(99, x + 1);
-                            if (!_points.ContainsKey(newX)) {
-                                _points.Remove(x);
-                                _points[newX] = y;
-                                _selectedPoint = newX;
-                                PointSelected?.Invoke(newX, y);
-                                this.Invalidate();
-                            }
-                        }
-                        break;
-                }
-                
-                if (modified) {
-                    _points[x] = y;
-                    PointSelected?.Invoke(x, y);
-                    this.Invalidate();
-                    
-                    // Apply preview if enabled
-                    if (EnablePreview) {
-                        ApplyPreview(x, y);
-                    }
-                }
-                
-                e.Handled = true;
-            }
-        }
-        
-        private void ApplyPreview(int inputBrightness, int outputBrightness) {
+        public void ApplyPreview(int inputBrightness, int outputBrightness) {
             // Apply the brightness to show real-time preview
             if (_monitor.Type == MonitorType.WMI) {
                 Task.Run(() => BrightnessController.SetBrightnessImmediate(_monitor, outputBrightness));
@@ -1809,7 +1808,7 @@ namespace SimpleBrightness
                 // Grid lines every 10%
                 for (int i = 0; i <= 10; i++) {
                     int x = left + (width * i / 10);
-                    int y = top + (height * i / 10);
+                    int y = bottom - (height * i / 10); // Y from bottom to top
                     
                     // Vertical grid
                     g.DrawLine(gridPen, x, top, x, bottom);
@@ -1820,11 +1819,11 @@ namespace SimpleBrightness
                     string label = (i * 10).ToString();
                     using (Font font = new Font("Segoe UI", 8))
                     using (Brush brush = new SolidBrush(ThemeManager.TextSecondary)) {
-                        // X axis labels
+                        // X axis labels (0-100 from left to right)
                         SizeF size = g.MeasureString(label, font);
                         g.DrawString(label, font, brush, x - size.Width / 2, bottom + 5);
                         
-                        // Y axis labels
+                        // Y axis labels (0-100 from bottom to top)
                         size = g.MeasureString(label, font);
                         g.DrawString(label, font, brush, left - size.Width - 5, y - size.Height / 2);
                     }
