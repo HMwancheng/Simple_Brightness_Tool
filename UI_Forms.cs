@@ -1258,3 +1258,4 @@ namespace SimpleBrightness
         public void UpdateMonitors(List<MonitorInfo> monitors) {}
     }
 }
+
