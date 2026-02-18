@@ -541,13 +541,10 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Get system DPI to create appropriately sized icon
-            float dpiScale = GetSystemDpiScale();
-            int iconSize = (int)(32 * dpiScale);  // Standard tray icon size is 16x16, 32x32 for high DPI
-            if (iconSize < 32) iconSize = 32;     // Minimum 32x32 for better quality
-            if (iconSize > 64) iconSize = 64;     // Maximum 64x64
-            
-            int fontSize = (int)(iconSize * 0.5);  // Font size proportional to icon
+            // Windows tray icon standard sizes: 16x16, 20x20, 24x24, 32x32
+            // Use 32x32 as base for best quality, system will scale as needed
+            int iconSize = 32;
+            int fontSize = 18;  // Proportional font size for 32x32 icon
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
@@ -561,21 +558,6 @@ namespace SimpleBrightness
                 int y = (iconSize - textSize.Height) / 2 + 1;
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                 return Icon.FromHandle(bmp.GetHicon());
-            }
-        }
-        
-        private static float GetSystemDpiScale()
-        {
-            try
-            {
-                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
-                {
-                    return g.DpiX / 96.0f;
-                }
-            }
-            catch
-            {
-                return 1.0f;
             }
         }
     }
@@ -672,74 +654,71 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            // Measure text height for proper positioning
-            int textHeight = 16;  // Height for 10pt font
-            int valTextHeight = 18; // Height for 11pt font
-            int barHeight = 6;    // Progress bar height (6px)
-            int gap = 12;         // Gap between bar and value
-            int itemHeight = 52;  // Height per monitor item
+            // Layout constants - balanced margins on all sides
+            int iconSize = 16;     // Size for brightness icon
+            int barHeight = 6;     // Progress bar height (6px)
+            int gap = 10;          // Gap between elements
+            int itemHeight = 40;   // Height per monitor item (reduced for compact layout)
+            int margin = 16;       // Equal margin on all sides
+            int valWidth = 32;     // Width for value text
             
-            // Equal margins on all sides
-            int hMargin = 20;      // Horizontal margin (left and right)
-            int vMargin = 16;      // Vertical margin (top and bottom)
-            int valWidth = 40;     // Width for value text (to fit "100")
-            
-            // Calculate bar width: Total - left margin - gap - valWidth - right margin
-            int barWidth = this.Width - hMargin - gap - valWidth - hMargin;
-            int barLeft = hMargin;
+            // Calculate positions: icon - gap - bar - gap - value
+            int iconX = margin;
+            int barLeft = iconX + iconSize + gap;
+            int barWidth = this.Width - barLeft - gap - valWidth - margin;
             int valX = barLeft + barWidth + gap;
             
             // Calculate starting Y with equal top/bottom margins
             int totalContentHeight = (_monitors.Count * itemHeight);
-            int availableHeight = this.Height - (vMargin * 2);
-            int startY = vMargin + (availableHeight - totalContentHeight) / 2;
-            if (startY < vMargin) startY = vMargin;
+            int availableHeight = this.Height - (margin * 2);
+            int startY = margin + (availableHeight - totalContentHeight) / 2;
+            if (startY < margin) startY = margin;
             
-            // Draw ALL monitors
-            for (int i = 0; i < _monitors.Count; i++)
+            // Icon font for brightness symbol (small sun)
+            using (Font iconFont = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular))
+            using (Brush iconBrush = new SolidBrush(_textColor))
             {
-                var monitor = _monitors[i];
-                int brightness = monitor.LastBrightness;
-                int currentY = startY + (i * itemHeight);
-                
-                // Calculate positions - move text UP more to avoid being cut off
-                // Move name up by full text height to give more space
-                int nameY = currentY - textHeight;  // Move UP by full text height
-                int barTop = currentY + 18;         // Bar below name
-                // Value centered with bar
-                int valY = barTop + (barHeight - valTextHeight) / 2;
+                // Draw ALL monitors
+                for (int i = 0; i < _monitors.Count; i++)
+                {
+                    var monitor = _monitors[i];
+                    int brightness = monitor.LastBrightness;
+                    int currentY = startY + (i * itemHeight);
+                    
+                    // Vertical center of the item
+                    int centerY = currentY + itemHeight / 2;
+                    int barTop = centerY - barHeight / 2;
+                    int valY = centerY - 9; // Half of 18px text height
 
-                // Monitor name (smaller, bold, aligned left) - moved UP more
-                using (Font nameFont = new Font("Segoe UI", 10, FontStyle.Bold))
-                using (Brush nameBrush = new SolidBrush(_textColor))
-                {
-                    Rectangle nameRect = new Rectangle(hMargin, nameY, barWidth, textHeight + 4);
-                    g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
-                }
+                    // Draw brightness icon (small sun) on the left
+                    Size iconTextSize = TextRenderer.MeasureText("\uE708", iconFont);
+                    int iconDrawY = centerY - iconTextSize.Height / 2;
+                    TextRenderer.DrawText(g, "\uE708", iconFont, new Point(iconX, iconDrawY), _textColor);
 
-                // Progress bar - 6px height with rounded corners
-                using (Brush trackBrush = new SolidBrush(_trackColor))
-                {
-                    FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
-                }
-                
-                // Fill (system accent color)
-                int fillW = (int)(barWidth * (brightness / 100.0f));
-                if (fillW > 0)
-                {
-                    using (Brush fillBrush = new SolidBrush(ThemeManager.Accent))
+                    // Progress bar - 6px height with rounded corners
+                    using (Brush trackBrush = new SolidBrush(_trackColor))
                     {
-                        FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
+                        FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
                     }
-                }
+                    
+                    // Fill (system accent color)
+                    int fillW = (int)(barWidth * (brightness / 100.0f));
+                    if (fillW > 0)
+                    {
+                        using (Brush fillBrush = new SolidBrush(ThemeManager.Accent))
+                        {
+                            FillRoundedRectangle(g, fillBrush, barLeft, barTop, fillW, barHeight, barHeight / 2);
+                        }
+                    }
 
-                // Value text (no % symbol, centered vertically with slider)
-                using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
-                using (Brush valBrush = new SolidBrush(_textColor))
-                {
-                    Rectangle valRect = new Rectangle(valX, valY, valWidth, valTextHeight);
-                    StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
-                    g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
+                    // Value text (no % symbol, centered vertically)
+                    using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
+                    using (Brush valBrush = new SolidBrush(_textColor))
+                    {
+                        Rectangle valRect = new Rectangle(valX, valY, valWidth, 18);
+                        StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
+                        g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
+                    }
                 }
             }
         }
