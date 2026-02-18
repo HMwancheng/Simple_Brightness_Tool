@@ -541,25 +541,61 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Create 32x32 icon - Windows will scale appropriately
-            int iconSize = 32;
-            int fontSize = 16;
+            // 根据系统DPI获取合适的托盘图标尺寸
+            // Windows托盘图标标准尺寸: 16x16 (100%), 20x20 (125%), 24x24 (150%), 32x32 (200%)
+            int iconSize = GetTrayIconSize();
+            int fontSize = iconSize / 2; // 字体大小约为图标的一半
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 g.Clear(Color.Transparent);
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
 
-                Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
-                Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
-                int x = (iconSize - textSize.Width) / 2;
-                int y = (iconSize - textSize.Height) / 2;
-                TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
+                // 使用GraphicsUnit.Pixel确保字体大小准确
+                using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
+                    // 测量文本大小
+                    Size textSize = TextRenderer.MeasureText(g, "\uE706", iconFont);
+                    
+                    // 计算居中位置，确保整数坐标避免模糊
+                    int x = (iconSize - textSize.Width) / 2;
+                    int y = (iconSize - textSize.Height) / 2;
+                    
+                    // 使用TextRenderer绘制，它在GDI+上更清晰地渲染文本
+                    TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White, 
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                }
                 
                 IntPtr hIcon = bmp.GetHicon();
                 Icon icon = Icon.FromHandle(hIcon);
                 return icon;
+            }
+        }
+
+        private static int GetTrayIconSize() {
+            // 获取系统DPI缩放比例
+            float dpiScale = GetSystemDpiScale();
+            
+            // 根据DPI返回合适的图标尺寸
+            // Windows建议使用这些标准尺寸以确保清晰显示
+            if (dpiScale >= 2.0f) return 32;      // 200% 缩放
+            if (dpiScale >= 1.75f) return 28;     // 175% 缩放  
+            if (dpiScale >= 1.5f) return 24;      // 150% 缩放
+            if (dpiScale >= 1.25f) return 20;     // 125% 缩放
+            return 16;                            // 100% 缩放 (标准托盘图标大小)
+        }
+
+        private static float GetSystemDpiScale() {
+            try {
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) {
+                    float dpiX = g.DpiX;
+                    // 标准DPI是96，计算缩放比例
+                    return dpiX / 96.0f;
+                }
+            }
+            catch {
+                return 1.0f; // 默认100%
             }
         }
     }
@@ -1426,27 +1462,105 @@ namespace SimpleBrightness
                 ColumnCount = 1,
                 BackColor = ThemeManager.Background
             };
-            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
-            mainTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 120)); // Top panel with controls
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // Graph
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));  // Bottom panel with description
             this.Controls.Add(mainTable);
             
-            // Top panel - only title
+            // Top panel - title and controls
             Panel topPanel = new Panel {
                 Dock = DockStyle.Fill,
                 BackColor = ThemeManager.Surface,
-                Padding = new Padding(20, 15, 20, 10)
+                Padding = new Padding(20, 10, 20, 10)
             };
             mainTable.Controls.Add(topPanel, 0, 0);
             
+            // Top panel layout
+            TableLayoutPanel topTable = new TableLayoutPanel {
+                Dock = DockStyle.Fill,
+                RowCount = 2,
+                ColumnCount = 3,
+                BackColor = ThemeManager.Surface
+            };
+            topTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Title row
+            topTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 60)); // Controls row
+            topTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));    // Checkboxes
+            topTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // Spacer
+            topTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));    // Selected point + Save
+            topPanel.Controls.Add(topTable);
+            
+            // Row 0: Title (spans all columns)
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
-                Location = new Point(0, 15), 
                 AutoSize = true, 
                 ForeColor = ThemeManager.Text,
-                Font = new Font("Segoe UI Variable Display", 14)
+                Font = new Font("Segoe UI Variable Display", 14),
+                Dock = DockStyle.Left
             };
-            topPanel.Controls.Add(title);
+            topTable.Controls.Add(title, 0, 0);
+            topTable.SetColumnSpan(title, 3);
+            
+            // Row 1: Controls - Left side (Checkboxes)
+            FlowLayoutPanel leftControls = new FlowLayoutPanel {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                BackColor = ThemeManager.Surface,
+                Dock = DockStyle.Left,
+                Margin = new Padding(0, 15, 0, 0)
+            };
+            topTable.Controls.Add(leftControls, 0, 1);
+            
+            CheckBox chkPreview = new CheckBox {
+                Text = "实时预览",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Checked = false,
+                Margin = new Padding(0, 5, 20, 0)
+            };
+            leftControls.Controls.Add(chkPreview);
+            
+            CheckBox chkUnlock = new CheckBox {
+                Text = "解锁 0%/100%",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Checked = false,
+                Margin = new Padding(0, 5, 20, 0)
+            };
+            leftControls.Controls.Add(chkUnlock);
+            
+            // Row 1: Controls - Right side (Selected point + Save)
+            FlowLayoutPanel rightControls = new FlowLayoutPanel {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                BackColor = ThemeManager.Surface,
+                Dock = DockStyle.Right,
+                Margin = new Padding(0, 10, 0, 0)
+            };
+            topTable.Controls.Add(rightControls, 2, 1);
+            
+            Label lblSelected = new Label {
+                Text = "选中节点:",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 8, 5, 0)
+            };
+            rightControls.Controls.Add(lblSelected);
+            
+            Label lblSelectedValue = new Label {
+                Text = "无",
+                AutoSize = true,
+                ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Margin = new Padding(0, 8, 20, 0)
+            };
+            rightControls.Controls.Add(lblSelectedValue);
+            
+            Win11Button saveBtn = new Win11Button { 
+                Text = "保存并生效", 
+                Size = new Size(120, 36),
+                BackColor = ThemeManager.Accent
+            };
+            rightControls.Controls.Add(saveBtn);
             
             // Graph control
             _graph = new CurveGraphControl(_points, monitor, config) {
@@ -1455,7 +1569,7 @@ namespace SimpleBrightness
             };
             mainTable.Controls.Add(_graph, 0, 1);
             
-            // Bottom panel
+            // Bottom panel - description and help
             Panel bottomPanel = new Panel {
                 Dock = DockStyle.Fill,
                 BackColor = ThemeManager.Surface,
@@ -1463,21 +1577,18 @@ namespace SimpleBrightness
             };
             mainTable.Controls.Add(bottomPanel, 0, 2);
             
-            // Bottom layout - 3 rows
+            // Bottom layout
             TableLayoutPanel bottomTable = new TableLayoutPanel {
                 Dock = DockStyle.Fill,
-                RowCount = 3,
-                ColumnCount = 2,
+                RowCount = 2,
+                ColumnCount = 1,
                 BackColor = ThemeManager.Surface
             };
-            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 25)); // Description row
-            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 25)); // Info row
-            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // Controls row
-            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
-            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
             bottomPanel.Controls.Add(bottomTable);
             
-            // Row 0: Description (left aligned)
+            // Description
             Label lblDesc = new Label {
                 Text = "💡 输入亮度 = 软件界面显示值  |  输出亮度 = 显示器实际亮度",
                 AutoSize = true,
@@ -1487,7 +1598,7 @@ namespace SimpleBrightness
             };
             bottomTable.Controls.Add(lblDesc, 0, 0);
             
-            // Row 1: Info (left aligned, below description)
+            // Help text
             Label lblInfo = new Label {
                 Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调(↑↓输出 ←→输入) | Ctrl+Z撤销 | 右键删除",
                 AutoSize = true,
@@ -1496,68 +1607,6 @@ namespace SimpleBrightness
                 Dock = DockStyle.Left
             };
             bottomTable.Controls.Add(lblInfo, 0, 1);
-            bottomTable.SetColumnSpan(lblInfo, 2);
-            
-            // Row 0: Selected point display (right aligned)
-            FlowLayoutPanel selectedPanel = new FlowLayoutPanel {
-                FlowDirection = FlowDirection.LeftToRight,
-                AutoSize = true,
-                BackColor = ThemeManager.Surface,
-                Dock = DockStyle.Right
-            };
-            bottomTable.Controls.Add(selectedPanel, 1, 0);
-            
-            Label lblSelected = new Label {
-                Text = "选中节点:",
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Margin = new Padding(0, 5, 5, 0)
-            };
-            selectedPanel.Controls.Add(lblSelected);
-            
-            Label lblSelectedValue = new Label {
-                Text = "无",
-                AutoSize = true,
-                ForeColor = ThemeManager.Text,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                Margin = new Padding(0, 5, 0, 0)
-            };
-            selectedPanel.Controls.Add(lblSelectedValue);
-            
-            // Row 2: Controls (left side) and Save button (right side)
-            FlowLayoutPanel controlsPanel = new FlowLayoutPanel {
-                FlowDirection = FlowDirection.LeftToRight,
-                AutoSize = true,
-                BackColor = ThemeManager.Surface,
-                Dock = DockStyle.Left
-            };
-            bottomTable.Controls.Add(controlsPanel, 0, 2);
-            
-            CheckBox chkPreview = new CheckBox {
-                Text = "实时预览",
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Checked = false,
-                Margin = new Padding(0, 8, 20, 0)
-            };
-            controlsPanel.Controls.Add(chkPreview);
-            
-            CheckBox chkUnlock = new CheckBox {
-                Text = "解锁 0%/100%",
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Checked = false,
-                Margin = new Padding(0, 8, 20, 0)
-            };
-            controlsPanel.Controls.Add(chkUnlock);
-            
-            Win11Button saveBtn = new Win11Button { 
-                Text = "保存并生效", 
-                Size = new Size(120, 36),
-                BackColor = ThemeManager.Accent,
-                Dock = DockStyle.Right
-            };
-            bottomTable.Controls.Add(saveBtn, 1, 2);
             
             // Key event handler
             this.KeyDown += (s, e) => {
