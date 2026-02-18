@@ -716,12 +716,14 @@ namespace SimpleBrightness
             int contentPadding = 20;     // Generous padding around content
             int elementGap = 12;         // Gap between icon/bar/value
             int iconWidth = 24;          // Width allocated for icon
+            int monitorGap = 16;         // Gap between monitors
             
             // Measure value text width for "100"
-            int valWidth = 40;           // Width for value text
+            int valWidth = 36;           // Width for value text (reduced right padding)
+            int rightPadding = 12;       // Reduced right padding
             
             // Calculate available width - center everything
-            int totalFixedWidth = iconWidth + (elementGap * 2) + valWidth;
+            int totalFixedWidth = iconWidth + (elementGap * 2) + valWidth + rightPadding;
             int availableBarWidth = this.Width - (contentPadding * 2) - totalFixedWidth;
             
             // Calculate positions - centered layout
@@ -733,8 +735,8 @@ namespace SimpleBrightness
             // Auto-calculate item height with generous padding
             int itemHeight = barHeight + 24;  // 12px padding top and bottom
             
-            // Auto-calculate OSD height based on content
-            int totalContentHeight = (_monitors.Count * itemHeight);
+            // Auto-calculate OSD height based on content with monitor gaps
+            int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
             int osdHeight = totalContentHeight + (contentPadding * 2);
             
             // Resize OSD if needed (only if significantly different)
@@ -748,7 +750,7 @@ namespace SimpleBrightness
             // Starting Y with generous padding
             int startY = contentPadding;
             
-            // Icon font for brightness symbol - use small sun icon (E708)
+            // Icon font for brightness symbol - use EC8A icon
             using (Font iconFont = new Font("Segoe MDL2 Assets", 16, FontStyle.Regular))
             using (Brush iconBrush = new SolidBrush(_textColor))
             {
@@ -757,18 +759,19 @@ namespace SimpleBrightness
                 {
                     var monitor = _monitors[i];
                     int brightness = monitor.LastBrightness;
-                    int currentY = startY + (i * itemHeight);
+                    // Add gap between monitors
+                    int currentY = startY + (i * (itemHeight + monitorGap));
                     
                     // Vertical center of the item
                     int centerY = currentY + itemHeight / 2;
                     int barTop = centerY - barHeight / 2;
                     int valY = centerY - 10;  // Half of 20px text height
 
-                    // Draw brightness icon (small sun) - use E708
-                    Size iconTextSize = TextRenderer.MeasureText("\uE708", iconFont);
+                    // Draw brightness icon - use EC8A
+                    Size iconTextSize = TextRenderer.MeasureText("\uEC8A", iconFont);
                     int iconDrawX = iconX + (iconWidth - iconTextSize.Width) / 2;  // Center in iconWidth space
                     int iconDrawY = centerY - iconTextSize.Height / 2;
-                    TextRenderer.DrawText(g, "\uE708", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
+                    TextRenderer.DrawText(g, "\uEC8A", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
 
                     // Progress bar - 6px height with rounded corners
                     using (Brush trackBrush = new SolidBrush(_trackColor))
