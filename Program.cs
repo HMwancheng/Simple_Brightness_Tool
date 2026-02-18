@@ -176,21 +176,12 @@ namespace SimpleBrightness
                 int newValue = monitor.LastBrightness + step;
                 newValue = Math.Max(0, Math.Min(100, newValue));
                 
-                if (_isDebugMode)
-                {
-                    SetBrightnessDirect(monitor, newValue);
-                }
-                else
-                {
-                    var curve = config.GetCurveForMonitor(monitor.UniqueId);
-                    int target = ApplyCurve(newValue, curve);
-                    SetBrightnessDirect(monitor, target);
-                }
-                monitor.LastBrightness = newValue;
+                // Use ApplyBrightness which handles curve and OSD
+                ApplyBrightness(monitor, newValue, false);
             }
             
-            // Show OSD
-            ShowOsd();
+            // Show OSD after all adjustments
+            ShowUnifiedOsd();
             
             // Save settings
             SaveAllSettings();
