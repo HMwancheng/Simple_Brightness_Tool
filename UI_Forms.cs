@@ -1424,12 +1424,16 @@ namespace SimpleBrightness
         }
     }
 
-    // ================== CurveEditorForm ==================
+    // ================== CurveEditorForm (Visual Graph Version) ==================
     public class CurveEditorForm : Form {
         private MonitorInfo _monitor;
         private AppConfig _config;
         private Dictionary<int, int> _points;
-        private FlowLayoutPanel _panel;
+        private CurveGraphControl _graph;
+        private ToolTip _tooltip;
+        private bool _showMinMaxUnlock = false;
+        private int _minBrightnessLimit = 0;
+        private int _maxBrightnessLimit = 100;
         
         private Dictionary<int, int> GetCurveWithFallback() {
             if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve)) return curve;
@@ -1462,8 +1466,9 @@ namespace SimpleBrightness
             _monitor = monitor;
             _config = config;
             _points = new Dictionary<int, int>(GetCurveWithFallback());
+            _tooltip = new ToolTip();
             
-            this.Size = new Size(900, 550);
+            this.Size = new Size(800, 600);
             this.BackColor = ThemeManager.Background;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Text = "曲线编辑器";
@@ -1473,45 +1478,91 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            Panel top = new Panel { Dock = DockStyle.Top, Height = 70, BackColor = ThemeManager.Surface };
+            // Top panel with controls
+            Panel topPanel = new Panel { 
+                Dock = DockStyle.Top, 
+                Height = 100, 
+                BackColor = ThemeManager.Surface,
+                Padding = new Padding(20)
+            };
             
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
-                Location = new Point(20, 20), 
+                Location = new Point(20, 15), 
                 AutoSize = true, 
                 ForeColor = ThemeManager.Text,
                 Font = new Font("Segoe UI Variable Display", 14)
             };
             
-            NumericUpDown num = new NumericUpDown { 
+            // Add point controls
+            Label lblX = new Label {
+                Text = "输入亮度:",
+                Location = new Point(20, 55),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary
+            };
+            
+            NumericUpDown numX = new NumericUpDown { 
                 Value = 50, 
-                Width = 80, 
-                Location = new Point(400, 18),
+                Minimum = 0,
+                Maximum = 100,
+                Width = 70, 
+                Location = new Point(90, 52),
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text
             };
             
-            Win11Button add = new Win11Button { 
-                Text = "添加节点", 
-                Location = new Point(490, 15), 
-                Size = new Size(100, 36) 
+            Label lblY = new Label {
+                Text = "输出亮度:",
+                Location = new Point(180, 55),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary
             };
             
-            Win11Button save = new Win11Button { 
+            NumericUpDown numY = new NumericUpDown { 
+                Value = 50, 
+                Minimum = _minBrightnessLimit,
+                Maximum = _maxBrightnessLimit,
+                Width = 70, 
+                Location = new Point(250, 52),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text
+            };
+            
+            Win11Button addBtn = new Win11Button { 
+                Text = "添加/更新节点", 
+                Location = new Point(340, 50), 
+                Size = new Size(120, 32) 
+            };
+            
+            Win11Button saveBtn = new Win11Button { 
                 Text = "保存并生效", 
-                Location = new Point(750, 15), 
-                Size = new Size(120, 36) 
+                Location = new Point(600, 50), 
+                Size = new Size(120, 36),
+                BackColor = ThemeManager.Accent
             };
             
-            add.Click += (s, e) => {
-                int x = (int)num.Value;
-                if (!_points.ContainsKey(x)) {
-                    _points[x] = x;
-                    RefreshSliders();
+            // Min/Max unlock checkbox
+            CheckBox chkUnlock = new CheckBox {
+                Text = "解锁最低/最高亮度限制",
+                Location = new Point(480, 55),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Checked = false
+            };
+            
+            addBtn.Click += (s, e) => {
+                int x = (int)numX.Value;
+                int y = (int)numY.Value;
+                if (x == 0 || x == 100) {
+                    MessageBox.Show("0% 和 100% 是固定节点，不能直接修改。请使用其他输入值。", "提示");
+                    return;
                 }
+                _points[x] = y;
+                _graph.Invalidate();
             };
             
-            save.Click += (s, e) => {
+            saveBtn.Click += (s, e) => {
                 _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_points);
                 if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
                     string[] parts = _monitor.UniqueId.Split('_');
@@ -1526,117 +1577,264 @@ namespace SimpleBrightness
                 this.Close();
             };
             
-            top.Controls.AddRange(new Control[] { title, num, add, save });
-            this.Controls.Add(top);
+            chkUnlock.CheckedChanged += (s, e) => {
+                _showMinMaxUnlock = chkUnlock.Checked;
+                if (_showMinMaxUnlock) {
+                    numY.Minimum = 0;
+                    numY.Maximum = 100;
+                    _minBrightnessLimit = 0;
+                    _maxBrightnessLimit = 100;
+                } else {
+                    // Reset to defaults if needed
+                    numY.Minimum = 0;
+                    numY.Maximum = 100;
+                }
+                _graph.ShowMinMaxEdit = _showMinMaxUnlock;
+                _graph.Invalidate();
+            };
             
-            _panel = new FlowLayoutPanel {
+            topPanel.Controls.AddRange(new Control[] { title, lblX, numX, lblY, numY, addBtn, chkUnlock, saveBtn });
+            this.Controls.Add(topPanel);
+            
+            // Graph control
+            _graph = new CurveGraphControl(_points) {
                 Dock = DockStyle.Fill,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(20, 10, 0, 0),
                 BackColor = ThemeManager.Background
             };
-            this.Controls.Add(_panel);
-            _panel.BringToFront();
             
-            RefreshSliders();
-        }
-        
-        private void RefreshSliders() {
-            _panel.Controls.Clear();
+            // Handle point selection from graph
+            _graph.PointSelected += (x, y) => {
+                numX.Value = x;
+                numY.Value = y;
+            };
+            
+            // Handle point deletion from graph
+            _graph.PointDeleted += (x) => {
+                if (x != 0 && x != 100) {
+                    _points.Remove(x);
+                    _graph.Invalidate();
+                }
+            };
+            
+            this.Controls.Add(_graph);
+            
+            // Ensure minimum points
             if (!_points.ContainsKey(0)) _points[0] = 0;
             if (!_points.ContainsKey(100)) _points[100] = 100;
+        }
+    }
+    
+    // ================== Curve Graph Control ==================
+    public class CurveGraphControl : Control {
+        private Dictionary<int, int> _points;
+        private int? _hoveredPoint = null;
+        private int? _selectedPoint = null;
+        private bool _isDragging = false;
+        private const int PointRadius = 6;
+        private const int HitRadius = 12;
+        private int _padding = 60;
+        
+        public bool ShowMinMaxEdit { get; set; } = false;
+        
+        public event Action<int, int>? PointSelected;
+        public event Action<int>? PointDeleted;
+        
+        public CurveGraphControl(Dictionary<int, int> points) {
+            _points = points;
+            this.DoubleBuffered = true;
+            this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
+                         ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+        
+        protected override void OnPaint(PaintEventArgs e) {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
             
-            foreach (var k in _points.Keys.OrderBy(x => x)) {
-                _panel.Controls.Add(CreateItem(k, _points[k]));
+            // Background
+            g.Clear(BackColor);
+            
+            int width = this.Width - _padding * 2;
+            int height = this.Height - _padding * 2;
+            int left = _padding;
+            int top = _padding;
+            int right = left + width;
+            int bottom = top + height;
+            
+            // Draw grid
+            using (Pen gridPen = new Pen(ThemeManager.IsDarkMode ? Color.FromArgb(60, 60, 60) : Color.FromArgb(220, 220, 220), 1))
+            using (Pen axisPen = new Pen(ThemeManager.TextSecondary, 1))
+            {
+                // Grid lines every 10%
+                for (int i = 0; i <= 10; i++) {
+                    int x = left + (width * i / 10);
+                    int y = top + (height * i / 10);
+                    
+                    // Vertical grid
+                    g.DrawLine(gridPen, x, top, x, bottom);
+                    // Horizontal grid
+                    g.DrawLine(gridPen, left, y, right, y);
+                    
+                    // Labels
+                    string label = (i * 10).ToString();
+                    using (Font font = new Font("Segoe UI", 8))
+                    using (Brush brush = new SolidBrush(ThemeManager.TextSecondary)) {
+                        // X axis labels
+                        SizeF size = g.MeasureString(label, font);
+                        g.DrawString(label, font, brush, x - size.Width / 2, bottom + 5);
+                        
+                        // Y axis labels
+                        size = g.MeasureString(label, font);
+                        g.DrawString(label, font, brush, left - size.Width - 5, y - size.Height / 2);
+                    }
+                }
+                
+                // Axes
+                g.DrawLine(axisPen, left, top, left, bottom);
+                g.DrawLine(axisPen, left, bottom, right, bottom);
+            }
+            
+            // Draw axis titles
+            using (Font titleFont = new Font("Segoe UI", 9, FontStyle.Bold))
+            using (Brush titleBrush = new SolidBrush(ThemeManager.Text)) {
+                // X axis title
+                g.DrawString("输入亮度 (%)", titleFont, titleBrush, left + width / 2 - 40, bottom + 25);
+                
+                // Y axis title (rotated)
+                g.TranslateTransform(15, top + height / 2);
+                g.RotateTransform(-90);
+                g.DrawString("输出亮度 (%)", titleFont, titleBrush, -40, 0);
+                g.ResetTransform();
+            }
+            
+            // Sort points for line drawing
+            var sortedPoints = _points.OrderBy(p => p.Key).ToList();
+            
+            // Draw curve line
+            if (sortedPoints.Count >= 2) {
+                using (Pen curvePen = new Pen(ThemeManager.Accent, 2)) {
+                    Point[] linePoints = sortedPoints.Select(p => {
+                        int x = left + (width * p.Key / 100);
+                        int y = bottom - (height * p.Value / 100);
+                        return new Point(x, y);
+                    }).ToArray();
+                    
+                    g.DrawCurve(curvePen, linePoints, 0.3f);
+                }
+            }
+            
+            // Draw points
+            foreach (var point in sortedPoints) {
+                int px = left + (width * point.Key / 100);
+                int py = bottom - (height * point.Value / 100);
+                bool isFixed = (point.Key == 0 || point.Key == 100);
+                bool isHovered = (_hoveredPoint == point.Key);
+                bool isSelected = (_selectedPoint == point.Key);
+                
+                // Point circle
+                Color pointColor = isFixed && !ShowMinMaxEdit ? Color.Gray : ThemeManager.Accent;
+                if (isSelected) pointColor = Color.Orange;
+                
+                using (Brush brush = new SolidBrush(pointColor))
+                using (Pen pen = new Pen(isHovered ? Color.White : pointColor, isHovered ? 2 : 1)) {
+                    int r = isHovered ? PointRadius + 2 : PointRadius;
+                    g.FillEllipse(brush, px - r, py - r, r * 2, r * 2);
+                    g.DrawEllipse(pen, px - r, py - r, r * 2, r * 2);
+                }
+                
+                // Value tooltip on hover
+                if (isHovered || isSelected) {
+                    using (Font font = new Font("Segoe UI", 9, FontStyle.Bold))
+                    using (Brush brush = new SolidBrush(ThemeManager.Text)) {
+                        string text = $"({point.Key}, {point.Value})";
+                        SizeF size = g.MeasureString(text, font);
+                        g.DrawString(text, font, brush, px - size.Width / 2, py - 25);
+                    }
+                }
+            }
+            
+            // Draw diagonal reference line (y=x)
+            using (Pen refPen = new Pen(Color.FromArgb(100, ThemeManager.TextSecondary), 1) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash }) {
+                g.DrawLine(refPen, left, bottom, right, top);
             }
         }
         
-        private Control CreateItem(int x, int y) {
-            Panel p = new Panel { 
-                Width = 80, 
-                Height = 350, 
-                Margin = new Padding(8),
-                BackColor = ThemeManager.Surface
-            };
+        protected override void OnMouseMove(MouseEventArgs e) {
+            base.OnMouseMove(e);
             
-            Label l = new Label { 
-                Text = y.ToString(), 
-                Top = 10, 
-                Width = 80, 
-                Height = 25, 
-                TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = ThemeManager.Accent,
-                Font = new Font("Segoe UI", 11, FontStyle.Bold)
-            };
+            int width = this.Width - _padding * 2;
+            int height = this.Height - _padding * 2;
+            int left = _padding;
+            int top = _padding;
+            int bottom = top + height;
             
-            int panelH = 350;
-            int labelH = 25;
-            int btnH = 30;
+            int? newHovered = null;
             
-            Label k = new Label { 
-                Text = x + "%", 
-                Top = panelH - labelH - btnH - 10, 
-                Width = 80, 
-                TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = ThemeManager.TextSecondary
-            };
-            
-            Control bottomCtrl;
-            if (x != 0 && x != 100) {
-                Win11Button d = new Win11Button { 
-                    Text = "×", 
-                    Top = panelH - btnH - 10, 
-                    Left = 25, 
-                    Size = new Size(30, 26),
-                    BackColor = Color.FromArgb(80, 80, 80)
-                };
-                d.Click += (s, e) => { _points.Remove(x); RefreshSliders(); };
-                bottomCtrl = d;
-            } else {
-                Label lockLbl = new Label { 
-                    Text = "🔒", 
-                    Top = panelH - btnH - 10, 
-                    Width = 80, 
-                    Height = 26, 
-                    TextAlign = ContentAlignment.MiddleCenter,
-                    ForeColor = ThemeManager.TextSecondary
-                };
-                bottomCtrl = lockLbl;
+            foreach (var point in _points) {
+                int px = left + (width * point.Key / 100);
+                int py = bottom - (height * point.Value / 100);
+                
+                double dist = Math.Sqrt(Math.Pow(e.X - px, 2) + Math.Pow(e.Y - py, 2));
+                if (dist <= HitRadius) {
+                    newHovered = point.Key;
+                    break;
+                }
             }
             
-            int sliderTop = 45;
-            int sliderH = (panelH - labelH - btnH - 10) - sliderTop - 10;
+            if (_hoveredPoint != newHovered) {
+                _hoveredPoint = newHovered;
+                this.Cursor = _hoveredPoint.HasValue ? Cursors.Hand : Cursors.Default;
+                this.Invalidate();
+            }
             
-            TrackBar t = new TrackBar {
-                Orientation = Orientation.Vertical,
-                Minimum = 0,
-                Maximum = 100,
-                Value = y,
-                Top = sliderTop,
-                Height = sliderH,
-                Width = 45,
-                Left = 17,
-                TickStyle = TickStyle.None
-            };
+            // Handle dragging
+            if (_isDragging && _selectedPoint.HasValue && e.Button == MouseButtons.Left) {
+                bool isFixed = (_selectedPoint == 0 || _selectedPoint == 100);
+                if (!isFixed || ShowMinMaxEdit) {
+                    // Calculate new position
+                    int newX = Math.Max(0, Math.Min(100, (e.X - left) * 100 / width));
+                    int newY = Math.Max(0, Math.Min(100, (bottom - e.Y) * 100 / height));
+                    
+                    // Remove old point and add new one
+                    int oldX = _selectedPoint.Value;
+                    _points.Remove(oldX);
+                    _points[newX] = newY;
+                    _selectedPoint = newX;
+                    
+                    PointSelected?.Invoke(newX, newY);
+                    this.Invalidate();
+                }
+            }
+        }
+        
+        protected override void OnMouseDown(MouseEventArgs e) {
+            base.OnMouseDown(e);
             
-            ToolTip tip = new ToolTip();
-            t.Scroll += (s, e) => {
-                _points[x] = t.Value;
-                l.Text = t.Value.ToString();
-                tip.SetToolTip(t, t.Value.ToString());
-            };
+            if (_hoveredPoint.HasValue) {
+                _selectedPoint = _hoveredPoint;
+                _isDragging = true;
+                PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
+                this.Invalidate();
+            } else {
+                _selectedPoint = null;
+                this.Invalidate();
+            }
+        }
+        
+        protected override void OnMouseUp(MouseEventArgs e) {
+            base.OnMouseUp(e);
+            _isDragging = false;
+        }
+        
+        protected override void OnMouseClick(MouseEventArgs e) {
+            base.OnMouseClick(e);
             
-            t.MouseWheel += (s, e) => {
-                int change = e.Delta > 0 ? 1 : -1;
-                t.Value = Math.Clamp(t.Value + change, 0, 100);
-                _points[x] = t.Value;
-                l.Text = t.Value.ToString();
-                ((HandledMouseEventArgs)e).Handled = true;
-            };
-            
-            p.Controls.AddRange(new Control[] { l, t, k, bottomCtrl });
-            return p;
+            if (e.Button == MouseButtons.Right && _hoveredPoint.HasValue) {
+                bool isFixed = (_hoveredPoint == 0 || _hoveredPoint == 100);
+                if (!isFixed) {
+                    PointDeleted?.Invoke(_hoveredPoint.Value);
+                }
+            }
         }
     }
 
