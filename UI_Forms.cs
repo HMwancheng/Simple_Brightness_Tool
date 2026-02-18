@@ -305,8 +305,8 @@ namespace SimpleBrightness
                      ControlStyles.SupportsTransparentBackColor, true);
             Height = 36; // Increased to accommodate larger thumb
             Cursor = Cursors.Hand;
-            // Set background to match theme
-            this.BackColor = ThemeManager.Background;
+            // Make background transparent to blend with parent
+            this.BackColor = Color.Transparent;
         }
         
         protected override void OnHandleCreated(EventArgs e)
@@ -541,8 +541,13 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            int iconSize = 48;
-            int fontSize = 24;
+            // Get system DPI to create appropriately sized icon
+            float dpiScale = GetSystemDpiScale();
+            int iconSize = (int)(32 * dpiScale);  // Standard tray icon size is 16x16, 32x32 for high DPI
+            if (iconSize < 32) iconSize = 32;     // Minimum 32x32 for better quality
+            if (iconSize > 64) iconSize = 64;     // Maximum 64x64
+            
+            int fontSize = (int)(iconSize * 0.5);  // Font size proportional to icon
 
             using (Bitmap bmp = new Bitmap(iconSize, iconSize))
             using (Graphics g = Graphics.FromImage(bmp)) {
@@ -553,9 +558,24 @@ namespace SimpleBrightness
                 Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
                 Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
                 int x = (iconSize - textSize.Width) / 2;
-                int y = (iconSize - textSize.Height) / 2 + 2;
+                int y = (iconSize - textSize.Height) / 2 + 1;
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                 return Icon.FromHandle(bmp.GetHicon());
+            }
+        }
+        
+        private static float GetSystemDpiScale()
+        {
+            try
+            {
+                using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    return g.DpiX / 96.0f;
+                }
+            }
+            catch
+            {
+                return 1.0f;
             }
         }
     }
@@ -657,22 +677,23 @@ namespace SimpleBrightness
             int valTextHeight = 18; // Height for 11pt font
             int barHeight = 6;    // Progress bar height (6px)
             int gap = 12;         // Gap between bar and value
-            int itemHeight = 52;  // Height per monitor item (increased for better spacing)
+            int itemHeight = 52;  // Height per monitor item
             
-            // Equal margins on both sides - use exact same value
-            int leftMargin = 20;   // Left margin for bar
-            int rightMargin = 20;  // Right margin for value
-            int valWidth = 40;     // Increased width for value text (to fit "100")
+            // Equal margins on all sides
+            int hMargin = 20;      // Horizontal margin (left and right)
+            int vMargin = 16;      // Vertical margin (top and bottom)
+            int valWidth = 40;     // Width for value text (to fit "100")
             
             // Calculate bar width: Total - left margin - gap - valWidth - right margin
-            int barWidth = this.Width - leftMargin - gap - valWidth - rightMargin;
-            int barLeft = leftMargin;
+            int barWidth = this.Width - hMargin - gap - valWidth - hMargin;
+            int barLeft = hMargin;
             int valX = barLeft + barWidth + gap;
             
-            // Calculate starting Y to center content vertically
+            // Calculate starting Y with equal top/bottom margins
             int totalContentHeight = (_monitors.Count * itemHeight);
-            int startY = (this.Height - totalContentHeight) / 2;
-            if (startY < 12) startY = 12;
+            int availableHeight = this.Height - (vMargin * 2);
+            int startY = vMargin + (availableHeight - totalContentHeight) / 2;
+            if (startY < vMargin) startY = vMargin;
             
             // Draw ALL monitors
             for (int i = 0; i < _monitors.Count; i++)
@@ -681,18 +702,18 @@ namespace SimpleBrightness
                 int brightness = monitor.LastBrightness;
                 int currentY = startY + (i * itemHeight);
                 
-                // Calculate positions - move text UP to avoid being cut off
-                // Name is at top, move it up by half text height
-                int nameY = currentY - textHeight / 2;  // Move UP by half text height
-                int barTop = currentY + 20;             // Bar below name with proper gap
-                // Value should be centered with bar, move up slightly to align
+                // Calculate positions - move text UP more to avoid being cut off
+                // Move name up by full text height to give more space
+                int nameY = currentY - textHeight;  // Move UP by full text height
+                int barTop = currentY + 18;         // Bar below name
+                // Value centered with bar
                 int valY = barTop + (barHeight - valTextHeight) / 2;
 
-                // Monitor name (smaller, bold, aligned left) - moved UP
+                // Monitor name (smaller, bold, aligned left) - moved UP more
                 using (Font nameFont = new Font("Segoe UI", 10, FontStyle.Bold))
                 using (Brush nameBrush = new SolidBrush(_textColor))
                 {
-                    Rectangle nameRect = new Rectangle(leftMargin, nameY, barWidth, textHeight + 4);
+                    Rectangle nameRect = new Rectangle(hMargin, nameY, barWidth, textHeight + 4);
                     g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
                 }
 
