@@ -541,23 +541,73 @@ namespace SimpleBrightness
     // ================== Icon ==================
     public static class IconDrawer {
         public static Icon DrawNativeIcon() {
-            // Use 16x16 icon size - Windows standard for notification area
-            // Windows will automatically scale for different DPI settings
-            int iconSize = 16;
-            int fontSize = 10; // Smaller font for 16x16 icon
-
-            using (Bitmap bmp = new Bitmap(iconSize, iconSize))
-            using (Graphics g = Graphics.FromImage(bmp)) {
+            // Create a multi-resolution icon
+            // Windows will select the appropriate size based on DPI
+            using (MemoryStream ms = new MemoryStream())
+            {
+                // Create ICO file with multiple sizes
+                using (BinaryWriter writer = new BinaryWriter(ms))
+                {
+                    // ICO header
+                    writer.Write((short)0); // Reserved
+                    writer.Write((short)1); // Type: icon
+                    writer.Write((short)2); // Count: 2 images (16x16 and 32x32)
+                    
+                    // Image 1: 16x16
+                    writer.Write((byte)16); // Width
+                    writer.Write((byte)16); // Height
+                    writer.Write((byte)0); // Colors (0 = >256)
+                    writer.Write((byte)0); // Reserved
+                    writer.Write((short)1); // Color planes
+                    writer.Write((short)32); // Bits per pixel
+                    
+                    byte[] icon16 = CreateIconImage(16, 8);
+                    writer.Write(icon16.Length); // Size
+                    writer.Write(22); // Offset (header size)
+                    
+                    // Image 2: 32x32
+                    writer.Write((byte)32); // Width
+                    writer.Write((byte)32); // Height
+                    writer.Write((byte)0); // Colors (0 = >256)
+                    writer.Write((byte)0); // Reserved
+                    writer.Write((short)1); // Color planes
+                    writer.Write((short)32); // Bits per pixel
+                    
+                    byte[] icon32 = CreateIconImage(32, 16);
+                    writer.Write(icon32.Length); // Size
+                    writer.Write(22 + icon16.Length); // Offset
+                    
+                    // Write image data
+                    writer.Write(icon16);
+                    writer.Write(icon32);
+                }
+                
+                ms.Position = 0;
+                return new Icon(ms);
+            }
+        }
+        
+        private static byte[] CreateIconImage(int size, int fontSize)
+        {
+            using (Bitmap bmp = new Bitmap(size, size))
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 g.Clear(Color.Transparent);
 
                 Font iconFont = new Font("Segoe MDL2 Assets", fontSize, FontStyle.Regular);
                 Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
-                int x = (iconSize - textSize.Width) / 2;
-                int y = (iconSize - textSize.Height) / 2;
+                int x = (size - textSize.Width) / 2;
+                int y = (size - textSize.Height) / 2;
                 TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
-                return Icon.FromHandle(bmp.GetHicon());
+                
+                // Convert to PNG for better quality in icon
+                using (MemoryStream pngStream = new MemoryStream())
+                {
+                    bmp.Save(pngStream, System.Drawing.Imaging.ImageFormat.Png);
+                    return pngStream.ToArray();
+                }
             }
         }
     }
@@ -1429,7 +1479,7 @@ namespace SimpleBrightness
             mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
             this.Controls.Add(mainTable);
             
-            // Top panel
+            // Top panel - only title
             Panel topPanel = new Panel {
                 Dock = DockStyle.Fill,
                 BackColor = ThemeManager.Surface,
@@ -1439,21 +1489,12 @@ namespace SimpleBrightness
             
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
-                Location = new Point(0, 0), 
+                Location = new Point(0, 15), 
                 AutoSize = true, 
                 ForeColor = ThemeManager.Text,
                 Font = new Font("Segoe UI Variable Display", 14)
             };
             topPanel.Controls.Add(title);
-            
-            Label lblInfo = new Label {
-                Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调(↑↓输出 ←→输入) | Ctrl+Z撤销 | 右键删除",
-                Location = new Point(0, 30),
-                AutoSize = true,
-                ForeColor = ThemeManager.Accent,
-                Font = new Font("Segoe UI", 9)
-            };
-            topPanel.Controls.Add(lblInfo);
             
             // Graph control
             _graph = new CurveGraphControl(_points, monitor, config) {
@@ -1466,36 +1507,51 @@ namespace SimpleBrightness
             Panel bottomPanel = new Panel {
                 Dock = DockStyle.Fill,
                 BackColor = ThemeManager.Surface,
-                Padding = new Padding(20)
+                Padding = new Padding(20, 10, 20, 10)
             };
             mainTable.Controls.Add(bottomPanel, 0, 2);
             
-            // Bottom layout
+            // Bottom layout - 3 rows
             TableLayoutPanel bottomTable = new TableLayoutPanel {
                 Dock = DockStyle.Fill,
-                RowCount = 2,
-                ColumnCount = 3,
+                RowCount = 3,
+                ColumnCount = 2,
                 BackColor = ThemeManager.Surface
             };
-            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
-            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 25)); // Description row
+            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 25)); // Info row
+            bottomTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // Controls row
+            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
+            bottomTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
             bottomPanel.Controls.Add(bottomTable);
             
+            // Row 0: Description (left aligned)
             Label lblDesc = new Label {
                 Text = "💡 输入亮度 = 软件界面显示值  |  输出亮度 = 显示器实际亮度",
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary,
                 Font = new Font("Segoe UI", 9),
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Left
             };
             bottomTable.Controls.Add(lblDesc, 0, 0);
             
+            // Row 1: Info (left aligned, below description)
+            Label lblInfo = new Label {
+                Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调(↑↓输出 ←→输入) | Ctrl+Z撤销 | 右键删除",
+                AutoSize = true,
+                ForeColor = ThemeManager.Accent,
+                Font = new Font("Segoe UI", 9),
+                Dock = DockStyle.Left
+            };
+            bottomTable.Controls.Add(lblInfo, 0, 1);
+            bottomTable.SetColumnSpan(lblInfo, 2);
+            
+            // Row 0: Selected point display (right aligned)
             FlowLayoutPanel selectedPanel = new FlowLayoutPanel {
                 FlowDirection = FlowDirection.LeftToRight,
                 AutoSize = true,
                 BackColor = ThemeManager.Surface,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Right
             };
             bottomTable.Controls.Add(selectedPanel, 1, 0);
             
@@ -1516,14 +1572,14 @@ namespace SimpleBrightness
             };
             selectedPanel.Controls.Add(lblSelectedValue);
             
+            // Row 2: Controls (left side) and Save button (right side)
             FlowLayoutPanel controlsPanel = new FlowLayoutPanel {
                 FlowDirection = FlowDirection.LeftToRight,
                 AutoSize = true,
                 BackColor = ThemeManager.Surface,
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Left
             };
-            bottomTable.Controls.Add(controlsPanel, 0, 1);
-            bottomTable.SetColumnSpan(controlsPanel, 2);
+            bottomTable.Controls.Add(controlsPanel, 0, 2);
             
             CheckBox chkPreview = new CheckBox {
                 Text = "实时预览",
@@ -1549,7 +1605,7 @@ namespace SimpleBrightness
                 BackColor = ThemeManager.Accent,
                 Dock = DockStyle.Right
             };
-            bottomTable.Controls.Add(saveBtn, 2, 1);
+            bottomTable.Controls.Add(saveBtn, 1, 2);
             
             // Key event handler
             this.KeyDown += (s, e) => {
