@@ -854,6 +854,8 @@ namespace SimpleBrightness
         public int DebounceTime { get; set; } = 200; 
         public bool UseSoftwarePower { get; set; } = false;
         public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
+        public string HotkeyIncrease { get; set; } = "Ctrl+F5";  // Default hotkey for brightness increase
+        public string HotkeyDecrease { get; set; } = "Ctrl+F6";  // Default hotkey for brightness decrease
         public List<string> HiddenMonitors { get; set; } = new List<string>(); 
         public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); 
         public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 
@@ -865,6 +867,107 @@ namespace SimpleBrightness
     }
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }
+
+    // ================== Global Hotkey Manager ==================
+    public class GlobalHotkey : IDisposable
+    {
+        private IntPtr _windowHandle;
+        private int _hotkeyId = 0;
+        private const int WM_HOTKEY = 0x0312;
+        
+        public event EventHandler? HotkeyPressed;
+        
+        public GlobalHotkey(IntPtr windowHandle)
+        {
+            _windowHandle = windowHandle;
+        }
+        
+        public bool Register(string hotkeyString, int hotkeyId)
+        {
+            if (string.IsNullOrEmpty(hotkeyString)) return false;
+            
+            var (modifiers, key) = ParseHotkey(hotkeyString);
+            if (key == Keys.None) return false;
+            
+            _hotkeyId = hotkeyId;
+            return RegisterHotKey(_windowHandle, hotkeyId, (uint)modifiers, (uint)key);
+        }
+        
+        public void Unregister()
+        {
+            if (_hotkeyId != 0)
+            {
+                UnregisterHotKey(_windowHandle, _hotkeyId);
+                _hotkeyId = 0;
+            }
+        }
+        
+        public void ProcessMessage(Message m)
+        {
+            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == _hotkeyId)
+            {
+                HotkeyPressed?.Invoke(this, EventArgs.Empty);
+            }
+        }
+        
+        private (ModifierKeys, Keys) ParseHotkey(string hotkeyString)
+        {
+            var parts = hotkeyString.Split('+');
+            ModifierKeys modifiers = ModifierKeys.None;
+            Keys key = Keys.None;
+            
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                switch (trimmed.ToLower())
+                {
+                    case "ctrl":
+                    case "control":
+                        modifiers |= ModifierKeys.Control;
+                        break;
+                    case "alt":
+                        modifiers |= ModifierKeys.Alt;
+                        break;
+                    case "shift":
+                        modifiers |= ModifierKeys.Shift;
+                        break;
+                    case "win":
+                    case "windows":
+                        modifiers |= ModifierKeys.Win;
+                        break;
+                    default:
+                        if (Enum.TryParse<Keys>(trimmed, true, out var parsedKey))
+                        {
+                            key = parsedKey;
+                        }
+                        break;
+                }
+            }
+            
+            return (modifiers, key);
+        }
+        
+        public void Dispose()
+        {
+            Unregister();
+        }
+        
+        [DllImport("user32.dll")]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    }
+    
+    [Flags]
+    public enum ModifierKeys : uint
+    {
+        None = 0,
+        Alt = 1,
+        Control = 2,
+        Shift = 4,
+        Win = 8
+    }
 
     public class MouseHook { private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam); private LowLevelMouseProc _proc; private IntPtr _hookID = IntPtr.Zero; public event MouseEventHandler? MouseWheel; public MouseHook() { _proc = HookCallback; } public void Install() { _hookID = SetWindowsHookEx(14, _proc, GetModuleHandle(System.Diagnostics.Process.GetCurrentProcess().MainModule?.ModuleName ?? "user32"), 0); } public void Uninstall() { UnhookWindowsHookEx(_hookID); } private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam) { if (nCode >= 0 && (int)wParam == 0x020A) { MSLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam); short delta = (short)((hookStruct.mouseData >> 16) & 0xffff); MouseWheel?.Invoke(this, new MouseEventArgs(MouseButtons.None, 0, hookStruct.pt.x, hookStruct.pt.y, delta)); } return CallNextHookEx(_hookID, nCode, wParam, lParam); } [StructLayout(LayoutKind.Sequential)] private struct POINT { public int x; public int y; } [StructLayout(LayoutKind.Sequential)] private struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public IntPtr dwExtraInfo; } [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId); [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool UnhookWindowsHookEx(IntPtr hhk); [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam); [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern IntPtr GetModuleHandle(string lpModuleName); }
 

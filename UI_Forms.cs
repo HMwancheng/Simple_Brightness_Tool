@@ -714,6 +714,7 @@ namespace SimpleBrightness
             // Auto-calculate layout with equal margins
             int barHeight = 6;           // Progress bar height
             int margin = 20;             // Equal margin on left and right
+            int leftIconPadding = 6;     // Extra padding on left of icon
             int elementGap = 12;         // Gap between icon/bar/value
             int iconWidth = 24;          // Width allocated for icon
             int monitorGap = 16;         // Gap between monitors
@@ -722,10 +723,10 @@ namespace SimpleBrightness
             // Calculate available width with equal left/right margins
             int availableContentWidth = this.Width - (margin * 2);
             int totalGaps = elementGap * 2;
-            int barWidth = availableContentWidth - iconWidth - totalGaps - valWidth;
+            int barWidth = availableContentWidth - leftIconPadding - iconWidth - totalGaps - valWidth;
             
             // Calculate positions - equal left/right margins
-            int iconX = margin;
+            int iconX = margin + leftIconPadding;
             int barLeft = iconX + iconWidth + elementGap;
             int valX = barLeft + barWidth + elementGap;
             
@@ -786,12 +787,12 @@ namespace SimpleBrightness
                         }
                     }
 
-                    // Value text (no % symbol, centered vertically)
+                    // Value text (no % symbol, centered vertically and horizontally)
                     using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
                     using (Brush valBrush = new SolidBrush(_textColor))
                     {
                         Rectangle valRect = new Rectangle(valX, valY, valWidth, 18);
-                        StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
+                        StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                         g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
                     }
                 }
