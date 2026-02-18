@@ -1468,24 +1468,18 @@ namespace SimpleBrightness
             _points = new Dictionary<int, int>(GetCurveWithFallback());
             _tooltip = new ToolTip();
             
-            this.Size = new Size(800, 600);
+            this.Size = new Size(850, 650);
             this.BackColor = ThemeManager.Background;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Text = "曲线编辑器";
             this.ForeColor = ThemeManager.Text;
+            this.KeyPreview = true; // Enable key preview for arrow keys
             
             this.HandleCreated += (s, e) => {
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Main container panel
-            Panel mainPanel = new Panel {
-                Dock = DockStyle.Fill,
-                BackColor = ThemeManager.Background
-            };
-            this.Controls.Add(mainPanel);
-            
-            // Title label at top
+            // Title label at top (outside panels)
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
                 Location = new Point(20, 15), 
@@ -1493,49 +1487,51 @@ namespace SimpleBrightness
                 ForeColor = ThemeManager.Text,
                 Font = new Font("Segoe UI Variable Display", 14)
             };
-            mainPanel.Controls.Add(title);
+            this.Controls.Add(title);
             
-            // Graph control - positioned below title, takes most of the space
-            _graph = new CurveGraphControl(_points) {
+            // Description label at bottom (outside panels, left aligned)
+            Label lblDesc = new Label {
+                Text = "💡 输入亮度 = 软件界面显示值  |  输出亮度 = 显示器实际亮度",
+                Location = new Point(20, this.ClientSize.Height - 75),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Font = new Font("Segoe UI", 9),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Left
+            };
+            this.Controls.Add(lblDesc);
+            
+            // Info label for interaction at bottom (outside panels, right aligned)
+            Label lblInfo = new Label {
+                Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调 | Ctrl+Z撤销 | 右键删除",
+                Location = new Point(this.ClientSize.Width - 420, this.ClientSize.Height - 75),
+                AutoSize = true,
+                ForeColor = ThemeManager.Accent,
+                Font = new Font("Segoe UI", 9),
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right
+            };
+            this.Controls.Add(lblInfo);
+            
+            // Graph control - fills all space between title and bottom labels
+            _graph = new CurveGraphControl(_points, monitor, config) {
                 Location = new Point(0, 50),
-                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 140),
+                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 130),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
                 BackColor = ThemeManager.Background
             };
-            mainPanel.Controls.Add(_graph);
+            this.Controls.Add(_graph);
             
             // Bottom control panel
             Panel bottomPanel = new Panel {
                 Dock = DockStyle.Bottom,
-                Height = 90,
+                Height = 50,
                 BackColor = ThemeManager.Surface
             };
             this.Controls.Add(bottomPanel);
             
-            // Description label (bottom left)
-            Label lblDesc = new Label {
-                Text = "💡 输入亮度 = 软件界面显示值  |  输出亮度 = 显示器实际亮度",
-                Location = new Point(20, 10),
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Font = new Font("Segoe UI", 9)
-            };
-            bottomPanel.Controls.Add(lblDesc);
-            
-            // Info label for interaction (bottom right)
-            Label lblInfo = new Label {
-                Text = "🖱️ 左键点击添加 | 拖拽移动 | 右键删除",
-                Location = new Point(480, 10),
-                AutoSize = true,
-                ForeColor = ThemeManager.Accent,
-                Font = new Font("Segoe UI", 9)
-            };
-            bottomPanel.Controls.Add(lblInfo);
-            
-            // Selected point display (center)
+            // Selected point display (center of bottom panel)
             Label lblSelected = new Label {
                 Text = "选中节点:",
-                Location = new Point(20, 38),
+                Location = new Point(250, 18),
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary
             };
@@ -1543,17 +1539,27 @@ namespace SimpleBrightness
             
             Label lblSelectedValue = new Label {
                 Text = "无",
-                Location = new Point(85, 38),
+                Location = new Point(315, 18),
                 AutoSize = true,
                 ForeColor = ThemeManager.Text,
                 Font = new Font("Segoe UI", 9, FontStyle.Bold)
             };
             bottomPanel.Controls.Add(lblSelectedValue);
             
-            // Min/Max unlock checkbox (bottom left)
+            // Preview checkbox
+            CheckBox chkPreview = new CheckBox {
+                Text = "实时预览",
+                Location = new Point(20, 16),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Checked = false
+            };
+            bottomPanel.Controls.Add(chkPreview);
+            
+            // Min/Max unlock checkbox
             CheckBox chkUnlock = new CheckBox {
-                Text = "解锁 0% / 100% 限制",
-                Location = new Point(20, 60),
+                Text = "解锁 0%/100%",
+                Location = new Point(120, 16),
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary,
                 Checked = false
@@ -1562,7 +1568,7 @@ namespace SimpleBrightness
             
             Win11Button saveBtn = new Win11Button { 
                 Text = "保存并生效", 
-                Location = new Point(640, 45), 
+                Location = new Point(700, 8), 
                 Size = new Size(120, 36),
                 BackColor = ThemeManager.Accent
             };
@@ -1590,6 +1596,10 @@ namespace SimpleBrightness
                 _graph.Invalidate();
             };
             
+            chkPreview.CheckedChanged += (s, e) => {
+                _graph.EnablePreview = chkPreview.Checked;
+            };
+            
             // Handle point selection from graph
             _graph.PointSelected += (x, y) => {
                 lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
@@ -1611,6 +1621,16 @@ namespace SimpleBrightness
                 _graph.Invalidate();
             };
             
+            // Handle undo from graph
+            _graph.ActionUndone += () => {
+                // Refresh the display
+                if (_graph.SelectedPoint.HasValue) {
+                    lblSelectedValue.Text = $"输入{_graph.SelectedPoint.Value}% → 输出{_points[_graph.SelectedPoint.Value]}%";
+                } else {
+                    lblSelectedValue.Text = "无";
+                }
+            };
+            
             // Ensure minimum points
             if (!_points.ContainsKey(0)) _points[0] = 0;
             if (!_points.ContainsKey(100)) _points[100] = 100;
@@ -1620,24 +1640,151 @@ namespace SimpleBrightness
     // ================== Curve Graph Control ==================
     public class CurveGraphControl : Control {
         private Dictionary<int, int> _points;
+        private MonitorInfo _monitor;
+        private AppConfig _config;
         private int? _hoveredPoint = null;
         private int? _selectedPoint = null;
         private bool _isDragging = false;
+        private bool _hasClickedOnce = false; // Track if point was clicked once
+        private Point _dragStartPos;
         private const int PointRadius = 6;
         private const int HitRadius = 12;
+        private const int DragThreshold = 5; // Pixels to start dragging
         private int _padding = 60;
         
+        // Undo stack
+        private Stack<Dictionary<int, int>> _undoStack = new Stack<Dictionary<int, int>>();
+        private const int MaxUndoDepth = 20;
+        
         public bool ShowMinMaxEdit { get; set; } = false;
+        public bool EnablePreview { get; set; } = false;
+        public int? SelectedPoint => _selectedPoint;
         
         public event Action<int, int>? PointSelected;
         public event Action<int>? PointDeleted;
         public event Action<int, int>? PointAdded;
+        public event Action? ActionUndone;
         
-        public CurveGraphControl(Dictionary<int, int> points) {
+        public CurveGraphControl(Dictionary<int, int> points, MonitorInfo monitor, AppConfig config) {
             _points = points;
+            _monitor = monitor;
+            _config = config;
             this.DoubleBuffered = true;
             this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
                          ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            this.TabStop = true; // Enable keyboard focus
+            
+            // Enable key events
+            this.KeyDown += CurveGraphControl_KeyDown;
+        }
+        
+        private void SaveStateForUndo() {
+            // Save current state
+            var stateCopy = new Dictionary<int, int>(_points);
+            _undoStack.Push(stateCopy);
+            
+            // Limit stack size
+            while (_undoStack.Count > MaxUndoDepth) {
+                var temp = _undoStack.ToArray();
+                _undoStack.Clear();
+                for (int i = 1; i < temp.Length; i++) {
+                    _undoStack.Push(temp[i]);
+                }
+            }
+        }
+        
+        public void Undo() {
+            if (_undoStack.Count > 0) {
+                var previousState = _undoStack.Pop();
+                _points.Clear();
+                foreach (var kvp in previousState) {
+                    _points[kvp.Key] = kvp.Value;
+                }
+                ActionUndone?.Invoke();
+                this.Invalidate();
+            }
+        }
+        
+        private void CurveGraphControl_KeyDown(object? sender, KeyEventArgs e) {
+            // Ctrl+Z for undo
+            if (e.Control && e.KeyCode == Keys.Z) {
+                Undo();
+                e.Handled = true;
+                return;
+            }
+            
+            // Arrow keys for adjusting selected point
+            if (_selectedPoint.HasValue) {
+                int x = _selectedPoint.Value;
+                if (!_points.ContainsKey(x)) return;
+                
+                int y = _points[x];
+                bool isFixed = (x == 0 || x == 100);
+                bool modified = false;
+                
+                switch (e.KeyCode) {
+                    case Keys.Up:
+                        if (!isFixed || ShowMinMaxEdit) {
+                            y = Math.Min(100, y + 1);
+                            modified = true;
+                        }
+                        break;
+                    case Keys.Down:
+                        if (!isFixed || ShowMinMaxEdit) {
+                            y = Math.Max(0, y - 1);
+                            modified = true;
+                        }
+                        break;
+                    case Keys.Left:
+                        if (!isFixed) {
+                            SaveStateForUndo();
+                            int newX = Math.Max(1, x - 1);
+                            if (!_points.ContainsKey(newX)) {
+                                _points.Remove(x);
+                                _points[newX] = y;
+                                _selectedPoint = newX;
+                                PointSelected?.Invoke(newX, y);
+                                this.Invalidate();
+                            }
+                        }
+                        break;
+                    case Keys.Right:
+                        if (!isFixed) {
+                            SaveStateForUndo();
+                            int newX = Math.Min(99, x + 1);
+                            if (!_points.ContainsKey(newX)) {
+                                _points.Remove(x);
+                                _points[newX] = y;
+                                _selectedPoint = newX;
+                                PointSelected?.Invoke(newX, y);
+                                this.Invalidate();
+                            }
+                        }
+                        break;
+                }
+                
+                if (modified) {
+                    _points[x] = y;
+                    PointSelected?.Invoke(x, y);
+                    this.Invalidate();
+                    
+                    // Apply preview if enabled
+                    if (EnablePreview) {
+                        ApplyPreview(x, y);
+                    }
+                }
+                
+                e.Handled = true;
+            }
+        }
+        
+        private void ApplyPreview(int inputBrightness, int outputBrightness) {
+            // Apply the brightness to show real-time preview
+            if (_monitor.Type == MonitorType.WMI) {
+                Task.Run(() => BrightnessController.SetBrightnessImmediate(_monitor, outputBrightness));
+            } else {
+                BrightnessController.SetBrightnessDebounced(_monitor, outputBrightness, 50);
+            }
         }
         
         protected override void OnPaint(PaintEventArgs e) {
@@ -1781,13 +1928,22 @@ namespace SimpleBrightness
                 this.Invalidate();
             }
             
-            // Handle dragging
-            if (_isDragging && _selectedPoint.HasValue && e.Button == MouseButtons.Left) {
+            // Handle dragging - only if already clicked once and moved enough
+            if (_isDragging && _selectedPoint.HasValue && e.Button == MouseButtons.Left && _hasClickedOnce) {
+                // Check if moved enough to start dragging
+                double moveDist = Math.Sqrt(Math.Pow(e.X - _dragStartPos.X, 2) + Math.Pow(e.Y - _dragStartPos.Y, 2));
+                if (moveDist < DragThreshold) return;
+                
                 bool isFixed = (_selectedPoint == 0 || _selectedPoint == 100);
                 if (!isFixed || ShowMinMaxEdit) {
                     // Calculate new position
                     int newX = Math.Max(0, Math.Min(100, (e.X - left) * 100 / width));
                     int newY = Math.Max(0, Math.Min(100, (bottom - e.Y) * 100 / height));
+                    
+                    // Apply preview if enabled
+                    if (EnablePreview) {
+                        ApplyPreview(newX, newY);
+                    }
                     
                     // Remove old point and add new one
                     int oldX = _selectedPoint.Value;
@@ -1803,20 +1959,38 @@ namespace SimpleBrightness
         
         protected override void OnMouseDown(MouseEventArgs e) {
             base.OnMouseDown(e);
+            this.Focus(); // Take focus for keyboard events
             
             if (_hoveredPoint.HasValue) {
-                _selectedPoint = _hoveredPoint;
-                _isDragging = true;
-                PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
-                this.Invalidate();
+                if (_selectedPoint == _hoveredPoint && !_hasClickedOnce) {
+                    // Second click on same point - prepare for dragging
+                    _hasClickedOnce = true;
+                    _dragStartPos = e.Location;
+                    _isDragging = true;
+                } else {
+                    // First click on point - just select it
+                    _selectedPoint = _hoveredPoint;
+                    _hasClickedOnce = false;
+                    _isDragging = false;
+                    PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
+                    this.Invalidate();
+                }
             } else {
                 _selectedPoint = null;
+                _hasClickedOnce = false;
+                _isDragging = false;
                 this.Invalidate();
             }
         }
         
         protected override void OnMouseUp(MouseEventArgs e) {
             base.OnMouseUp(e);
+            
+            // If we were dragging, save state for undo
+            if (_isDragging && _hasClickedOnce) {
+                SaveStateForUndo();
+            }
+            
             _isDragging = false;
         }
         
@@ -1826,6 +2000,7 @@ namespace SimpleBrightness
             if (e.Button == MouseButtons.Right && _hoveredPoint.HasValue) {
                 bool isFixed = (_hoveredPoint == 0 || _hoveredPoint == 100);
                 if (!isFixed) {
+                    SaveStateForUndo();
                     PointDeleted?.Invoke(_hoveredPoint.Value);
                 }
             }
@@ -1856,6 +2031,7 @@ namespace SimpleBrightness
                     }
                     
                     if (!tooClose) {
+                        SaveStateForUndo();
                         PointAdded?.Invoke(gridX, gridY);
                     }
                 }
