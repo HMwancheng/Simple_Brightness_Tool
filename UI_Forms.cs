@@ -301,11 +301,12 @@ namespace SimpleBrightness
         public Win11TrackBar()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
-                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | 
+                     ControlStyles.SupportsTransparentBackColor, true);
             Height = 36; // Increased to accommodate larger thumb
             Cursor = Cursors.Hand;
-            // Set background to transparent so parent background shows through
-            this.BackColor = Color.Transparent;
+            // Set background to match theme
+            this.BackColor = ThemeManager.Background;
         }
         
         protected override void OnHandleCreated(EventArgs e)
