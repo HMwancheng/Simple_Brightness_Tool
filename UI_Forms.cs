@@ -262,8 +262,9 @@ namespace SimpleBrightness
             
             UpdateThumbPosition();
             
-            // Draw track background (gray)
-            using (var trackBrush = new SolidBrush(ThemeManager.Track))
+            // Draw track background (darker in dark mode, lighter in light mode)
+            Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(60, 60, 60) : Color.FromArgb(200, 200, 200);
+            using (var trackBrush = new SolidBrush(trackColor))
             using (var trackPath = GetRoundedRect(_trackRect, TrackHeight / 2))
             {
                 g.FillPath(trackBrush, trackPath);
@@ -291,7 +292,8 @@ namespace SimpleBrightness
             }
             
             // Outer circle border
-            using (var borderPen = new Pen(ThemeManager.Border, 1))
+            Color borderColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
+            using (var borderPen = new Pen(borderColor, 1))
             using (var borderPath = GetCirclePath(_thumbRect))
             {
                 g.DrawPath(borderPen, borderPath);
@@ -494,10 +496,10 @@ namespace SimpleBrightness
         private List<MonitorInfo> _monitors;
         private int _displayIndex = 0;
         
-        // Windows native OSD style colors (always light)
-        private readonly Color _bgColor = Color.FromArgb(240, 240, 240);
-        private readonly Color _textColor = Color.FromArgb(0, 0, 0);
-        private readonly Color _trackColor = Color.FromArgb(200, 200, 200);
+        // Colors that adapt to theme
+        private Color _bgColor => ThemeManager.IsDarkMode ? Color.FromArgb(40, 40, 40) : Color.FromArgb(240, 240, 240);
+        private Color _textColor => ThemeManager.IsDarkMode ? Color.FromArgb(255, 255, 255) : Color.FromArgb(0, 0, 0);
+        private Color _trackColor => ThemeManager.IsDarkMode ? Color.FromArgb(80, 80, 80) : Color.FromArgb(200, 200, 200);
         
         public NativeOsdForm(List<MonitorInfo> monitors)
         {
@@ -505,7 +507,6 @@ namespace SimpleBrightness
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.TopMost = true;
-            this.BackColor = _bgColor;
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
             
@@ -570,7 +571,8 @@ namespace SimpleBrightness
             g.Clear(_bgColor);
 
             // Draw subtle shadow/border
-            using (var borderPen = new Pen(Color.FromArgb(180, 180, 180), 1))
+            Color borderColor = ThemeManager.IsDarkMode ? Color.FromArgb(80, 80, 80) : Color.FromArgb(180, 180, 180);
+            using (var borderPen = new Pen(borderColor, 1))
             {
                 Rectangle rect = this.ClientRectangle;
                 rect.Width -= 1; rect.Height -= 1;
@@ -579,16 +581,20 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            int startY = 18;  // Starting Y position
             int itemHeight = 50;  // Height per monitor item
-            int leftMargin = 20;  // Left margin
-            int rightMargin = 20; // Right margin
-            int barWidth = 220;   // Progress bar width
+            int leftMargin = 16;  // Left margin
+            int rightMargin = 16; // Right margin
             int barHeight = 6;    // Progress bar height (6px)
+            int valWidth = 36;    // Value text width
+            int spacing = 12;     // Equal spacing between elements
             
-            // Calculate positions for equal spacing
-            int availableWidth = this.Width - leftMargin - rightMargin;
-            int textWidth = availableWidth - barWidth - 10; // 10px gap between bar and value
+            // Calculate bar width: Total - left - right - valWidth - 2*spacing
+            int barWidth = this.Width - leftMargin - rightMargin - valWidth - (spacing * 2);
+            
+            // Calculate starting Y to center content vertically
+            int totalContentHeight = (_monitors.Count * itemHeight);
+            int startY = (this.Height - totalContentHeight) / 2;
+            if (startY < 12) startY = 12;
             
             // Draw ALL monitors
             for (int i = 0; i < _monitors.Count; i++)
@@ -596,13 +602,18 @@ namespace SimpleBrightness
                 var monitor = _monitors[i];
                 int brightness = monitor.LastBrightness;
                 int currentY = startY + (i * itemHeight);
-                int barTop = currentY + 26; // Position bar below name with proper spacing
+                
+                // Calculate text height for proper centering
+                int textHeight = 16; // Approximate height for 10pt font
+                int nameY = currentY + (itemHeight - textHeight - barHeight - 6) / 2; // Center name vertically in available space
+                int barTop = nameY + textHeight + 6; // Bar below name with 6px gap
+                int valY = barTop + (barHeight - textHeight) / 2; // Center value vertically with bar
 
-                // Monitor name (smaller, bold, aligned left)
+                // Monitor name (smaller, bold, aligned left) - moved up by half text height
                 using (Font nameFont = new Font("Segoe UI", 10, FontStyle.Bold))
                 using (Brush nameBrush = new SolidBrush(_textColor))
                 {
-                    Rectangle nameRect = new Rectangle(leftMargin, currentY, textWidth, 22);
+                    Rectangle nameRect = new Rectangle(leftMargin, nameY - textHeight / 2, barWidth, textHeight + 4);
                     g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
                 }
 
@@ -625,14 +636,13 @@ namespace SimpleBrightness
                     }
                 }
 
-                // Value text (no % symbol, centered vertically with slider, right aligned)
+                // Value text (no % symbol, centered vertically with slider)
                 using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
                 using (Brush valBrush = new SolidBrush(_textColor))
                 {
-                    // Position value text to the right of the bar, centered vertically with the bar
-                    int valX = barLeft + barWidth + 10;
-                    int valY = barTop - 9; // Center with 6px bar (22px height text, bar is 6px)
-                    Rectangle valRect = new Rectangle(valX, valY, 50, 24);
+                    // Position value text to the right of the bar with equal spacing
+                    int valX = barLeft + barWidth + spacing;
+                    Rectangle valRect = new Rectangle(valX, valY, valWidth, textHeight);
                     StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
                     g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
                 }
@@ -741,11 +751,11 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Create scrollable container
+            // Create scrollable container with proper background color
             Panel scrollContainer = new Panel {
                 Dock = DockStyle.Fill,
                 AutoScroll = true,
-                BackColor = Color.Transparent,
+                BackColor = ThemeManager.Background,
                 Padding = new Padding(0)
             };
             this.Controls.Add(scrollContainer);
@@ -875,7 +885,7 @@ namespace SimpleBrightness
                 Text = $"重置隐藏显示器 ({config.HiddenMonitors.Count})", 
                 Width = 350, 
                 Height = 40, 
-                Margin = new Padding(0, 10, 0, 10),
+                Margin = new Padding(0, 10, 0, 60),
                 BackColor = Color.FromArgb(60, 60, 60)
             }; 
             btnClearHidden.Click += (s, e) => { 
@@ -884,12 +894,12 @@ namespace SimpleBrightness
             }; 
             panel.Controls.Add(btnClearHidden);
             
+            // Floating save button at bottom right
             Win11Button btnOk = new Win11Button { 
                 Text = "保存设置", 
-                Width = 140, 
-                Height = 40, 
-                DialogResult = DialogResult.OK, 
-                Margin = new Padding(210, 20, 0, 0)
+                Width = 120, 
+                Height = 44, 
+                DialogResult = DialogResult.OK
             }; 
             btnOk.Click += (s, e) => { 
                 config.ScrollStep = (int)numStep.Value; 
@@ -907,7 +917,12 @@ namespace SimpleBrightness
                 SetAutoStart(chkAuto.Checked); 
                 this.Close(); 
             }; 
-            panel.Controls.Add(btnOk);
+            
+            // Add floating button to form directly (not to scroll panel)
+            btnOk.Location = new Point(this.ClientSize.Width - 140, this.ClientSize.Height - 64);
+            btnOk.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            this.Controls.Add(btnOk);
+            btnOk.BringToFront();
         } 
         private bool IsAutoStart() { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false)) return key?.GetValue("SimpleBrightness") != null; } 
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } 
