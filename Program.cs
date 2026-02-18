@@ -954,7 +954,7 @@ namespace SimpleBrightness
             CreateHandle(new CreateParams
             {
                 ExStyle = 0x80, // WS_EX_TOOLWINDOW (message-only window)
-                Style = 0x80000000, // WS_POPUP
+                Style = unchecked((int)0x80000000), // WS_POPUP
                 Width = 0,
                 Height = 0
             });

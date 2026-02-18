@@ -1479,78 +1479,6 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Key event handler for the form
-            this.KeyDown += (s, e) => {
-                // Ctrl+Z for undo
-                if (e.Control && e.KeyCode == Keys.Z) {
-                    _graph.Undo();
-                    e.Handled = true;
-                    return;
-                }
-                
-                // Arrow keys for adjusting selected point
-                if (_graph.SelectedPoint.HasValue) {
-                    int x = _graph.SelectedPoint.Value;
-                    if (!_points.ContainsKey(x)) return;
-                    
-                    int y = _points[x];
-                    bool isFixed = (x == 0 || x == 100);
-                    bool modified = false;
-                    
-                    switch (e.KeyCode) {
-                        case Keys.Up:
-                            if (!isFixed || _showMinMaxUnlock) {
-                                y = Math.Min(100, y + 1);
-                                modified = true;
-                            }
-                            break;
-                        case Keys.Down:
-                            if (!isFixed || _showMinMaxUnlock) {
-                                y = Math.Max(0, y - 1);
-                                modified = true;
-                            }
-                            break;
-                        case Keys.Left:
-                            if (!isFixed) {
-                                _graph.SaveStateForUndo();
-                                int newX = Math.Max(1, x - 1);
-                                if (!_points.ContainsKey(newX)) {
-                                    _points.Remove(x);
-                                    _points[newX] = y;
-                                    lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
-                                    _graph.Invalidate();
-                                }
-                            }
-                            break;
-                        case Keys.Right:
-                            if (!isFixed) {
-                                _graph.SaveStateForUndo();
-                                int newX = Math.Min(99, x + 1);
-                                if (!_points.ContainsKey(newX)) {
-                                    _points.Remove(x);
-                                    _points[newX] = y;
-                                    lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
-                                    _graph.Invalidate();
-                                }
-                            }
-                            break;
-                    }
-                    
-                    if (modified) {
-                        _points[x] = y;
-                        lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
-                        _graph.Invalidate();
-                        
-                        // Apply preview if enabled
-                        if (_graph.EnablePreview) {
-                            _graph.ApplyPreview(x, y);
-                        }
-                    }
-                    
-                    e.Handled = true;
-                }
-            };
-            
             // Title label at top (outside panels)
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
@@ -1617,6 +1545,89 @@ namespace SimpleBrightness
                 Font = new Font("Segoe UI", 9, FontStyle.Bold)
             };
             bottomPanel.Controls.Add(lblSelectedValue);
+            
+            // Key event handler for the form (after lblSelectedValue is declared)
+            this.KeyDown += (s, e) => {
+                // Ctrl+Z for undo
+                if (e.Control && e.KeyCode == Keys.Z) {
+                    _graph.Undo();
+                    // Refresh the display
+                    if (_graph.SelectedPoint.HasValue) {
+                        int sx = _graph.SelectedPoint.Value;
+                        if (_points.ContainsKey(sx)) {
+                            lblSelectedValue.Text = $"输入{sx}% → 输出{_points[sx]}%";
+                        } else {
+                            lblSelectedValue.Text = "无";
+                        }
+                    } else {
+                        lblSelectedValue.Text = "无";
+                    }
+                    e.Handled = true;
+                    return;
+                }
+                
+                // Arrow keys for adjusting selected point
+                if (_graph.SelectedPoint.HasValue) {
+                    int x = _graph.SelectedPoint.Value;
+                    if (!_points.ContainsKey(x)) return;
+                    
+                    int y = _points[x];
+                    bool isFixed = (x == 0 || x == 100);
+                    bool modified = false;
+                    
+                    switch (e.KeyCode) {
+                        case Keys.Up:
+                            if (!isFixed || _showMinMaxUnlock) {
+                                y = Math.Min(100, y + 1);
+                                modified = true;
+                            }
+                            break;
+                        case Keys.Down:
+                            if (!isFixed || _showMinMaxUnlock) {
+                                y = Math.Max(0, y - 1);
+                                modified = true;
+                            }
+                            break;
+                        case Keys.Left:
+                            if (!isFixed) {
+                                _graph.SaveStateForUndo();
+                                int newX = Math.Max(1, x - 1);
+                                if (!_points.ContainsKey(newX)) {
+                                    _points.Remove(x);
+                                    _points[newX] = y;
+                                    lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
+                                    _graph.Invalidate();
+                                }
+                            }
+                            break;
+                        case Keys.Right:
+                            if (!isFixed) {
+                                _graph.SaveStateForUndo();
+                                int newX = Math.Min(99, x + 1);
+                                if (!_points.ContainsKey(newX)) {
+                                    _points.Remove(x);
+                                    _points[newX] = y;
+                                    lblSelectedValue.Text = $"输入{newX}% → 输出{y}%";
+                                    _graph.Invalidate();
+                                }
+                            }
+                            break;
+                    }
+                    
+                    if (modified) {
+                        _points[x] = y;
+                        lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
+                        _graph.Invalidate();
+                        
+                        // Apply preview if enabled
+                        if (_graph.EnablePreview) {
+                            _graph.ApplyPreview(x, y);
+                        }
+                    }
+                    
+                    e.Handled = true;
+                }
+            };
             
             // Preview checkbox
             CheckBox chkPreview = new CheckBox {
@@ -1745,9 +1756,6 @@ namespace SimpleBrightness
             this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
                          ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             this.TabStop = true; // Enable keyboard focus
-            
-            // Enable key events
-            this.KeyDown += CurveGraphControl_KeyDown;
         }
         
         public void SaveStateForUndo() {
