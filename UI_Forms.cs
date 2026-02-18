@@ -1478,14 +1478,14 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Top panel with controls
-            Panel topPanel = new Panel { 
-                Dock = DockStyle.Top, 
-                Height = 100, 
-                BackColor = ThemeManager.Surface,
-                Padding = new Padding(20)
+            // Main container panel
+            Panel mainPanel = new Panel {
+                Dock = DockStyle.Fill,
+                BackColor = ThemeManager.Background
             };
+            this.Controls.Add(mainPanel);
             
+            // Title label at top
             Label title = new Label { 
                 Text = $"编辑: {monitor.Name}", 
                 Location = new Point(20, 15), 
@@ -1493,75 +1493,82 @@ namespace SimpleBrightness
                 ForeColor = ThemeManager.Text,
                 Font = new Font("Segoe UI Variable Display", 14)
             };
+            mainPanel.Controls.Add(title);
             
-            // Add point controls
-            Label lblX = new Label {
-                Text = "输入亮度:",
-                Location = new Point(20, 55),
+            // Description label
+            Label lblDesc = new Label {
+                Text = "💡 输入亮度 = 软件界面显示的亮度值    输出亮度 = 显示器实际呈现的亮度值",
+                Location = new Point(20, 45),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Font = new Font("Segoe UI", 9)
+            };
+            mainPanel.Controls.Add(lblDesc);
+            
+            // Info label for interaction
+            Label lblInfo = new Label {
+                Text = "🖱️ 左键点击空白处添加节点 | 拖拽移动节点 | 右键点击删除节点",
+                Location = new Point(20, 68),
+                AutoSize = true,
+                ForeColor = ThemeManager.Accent,
+                Font = new Font("Segoe UI", 9)
+            };
+            mainPanel.Controls.Add(lblInfo);
+            
+            // Selected point display (read-only)
+            Label lblSelected = new Label {
+                Text = "选中节点:",
+                Location = new Point(20, 95),
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary
             };
+            mainPanel.Controls.Add(lblSelected);
             
-            NumericUpDown numX = new NumericUpDown { 
-                Value = 50, 
-                Minimum = 0,
-                Maximum = 100,
-                Width = 70, 
-                Location = new Point(90, 52),
-                BackColor = ThemeManager.Surface,
-                ForeColor = ThemeManager.Text
-            };
-            
-            Label lblY = new Label {
-                Text = "输出亮度:",
-                Location = new Point(180, 55),
+            Label lblSelectedValue = new Label {
+                Text = "无",
+                Location = new Point(85, 95),
                 AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary
+                ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold)
             };
+            mainPanel.Controls.Add(lblSelectedValue);
             
-            NumericUpDown numY = new NumericUpDown { 
-                Value = 50, 
-                Minimum = _minBrightnessLimit,
-                Maximum = _maxBrightnessLimit,
-                Width = 70, 
-                Location = new Point(250, 52),
-                BackColor = ThemeManager.Surface,
-                ForeColor = ThemeManager.Text
+            // Graph control - positioned below controls
+            _graph = new CurveGraphControl(_points) {
+                Location = new Point(0, 125),
+                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 200),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+                BackColor = ThemeManager.Background
             };
+            mainPanel.Controls.Add(_graph);
             
-            Win11Button addBtn = new Win11Button { 
-                Text = "添加/更新节点", 
-                Location = new Point(340, 50), 
-                Size = new Size(120, 32) 
+            // Bottom control panel
+            Panel bottomPanel = new Panel {
+                Dock = DockStyle.Bottom,
+                Height = 70,
+                BackColor = ThemeManager.Surface
             };
-            
-            Win11Button saveBtn = new Win11Button { 
-                Text = "保存并生效", 
-                Location = new Point(600, 50), 
-                Size = new Size(120, 36),
-                BackColor = ThemeManager.Accent
-            };
+            this.Controls.Add(bottomPanel);
             
             // Min/Max unlock checkbox
             CheckBox chkUnlock = new CheckBox {
-                Text = "解锁最低/最高亮度限制",
-                Location = new Point(480, 55),
+                Text = "解锁 0% / 100% 限制",
+                Location = new Point(20, 25),
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary,
                 Checked = false
             };
+            bottomPanel.Controls.Add(chkUnlock);
             
-            addBtn.Click += (s, e) => {
-                int x = (int)numX.Value;
-                int y = (int)numY.Value;
-                if (x == 0 || x == 100) {
-                    MessageBox.Show("0% 和 100% 是固定节点，不能直接修改。请使用其他输入值。", "提示");
-                    return;
-                }
-                _points[x] = y;
-                _graph.Invalidate();
+            Win11Button saveBtn = new Win11Button { 
+                Text = "保存并生效", 
+                Location = new Point(640, 18), 
+                Size = new Size(120, 36),
+                BackColor = ThemeManager.Accent
             };
+            bottomPanel.Controls.Add(saveBtn);
             
+            // Event handlers
             saveBtn.Click += (s, e) => {
                 _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_points);
                 if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
@@ -1579,44 +1586,30 @@ namespace SimpleBrightness
             
             chkUnlock.CheckedChanged += (s, e) => {
                 _showMinMaxUnlock = chkUnlock.Checked;
-                if (_showMinMaxUnlock) {
-                    numY.Minimum = 0;
-                    numY.Maximum = 100;
-                    _minBrightnessLimit = 0;
-                    _maxBrightnessLimit = 100;
-                } else {
-                    // Reset to defaults if needed
-                    numY.Minimum = 0;
-                    numY.Maximum = 100;
-                }
                 _graph.ShowMinMaxEdit = _showMinMaxUnlock;
                 _graph.Invalidate();
             };
             
-            topPanel.Controls.AddRange(new Control[] { title, lblX, numX, lblY, numY, addBtn, chkUnlock, saveBtn });
-            this.Controls.Add(topPanel);
-            
-            // Graph control
-            _graph = new CurveGraphControl(_points) {
-                Dock = DockStyle.Fill,
-                BackColor = ThemeManager.Background
-            };
-            
             // Handle point selection from graph
             _graph.PointSelected += (x, y) => {
-                numX.Value = x;
-                numY.Value = y;
+                lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
             };
             
             // Handle point deletion from graph
             _graph.PointDeleted += (x) => {
                 if (x != 0 && x != 100) {
                     _points.Remove(x);
+                    lblSelectedValue.Text = "无";
                     _graph.Invalidate();
                 }
             };
             
-            this.Controls.Add(_graph);
+            // Handle point added from graph
+            _graph.PointAdded += (x, y) => {
+                _points[x] = y;
+                lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
+                _graph.Invalidate();
+            };
             
             // Ensure minimum points
             if (!_points.ContainsKey(0)) _points[0] = 0;
@@ -1638,6 +1631,7 @@ namespace SimpleBrightness
         
         public event Action<int, int>? PointSelected;
         public event Action<int>? PointDeleted;
+        public event Action<int, int>? PointAdded;
         
         public CurveGraphControl(Dictionary<int, int> points) {
             _points = points;
@@ -1833,6 +1827,37 @@ namespace SimpleBrightness
                 bool isFixed = (_hoveredPoint == 0 || _hoveredPoint == 100);
                 if (!isFixed) {
                     PointDeleted?.Invoke(_hoveredPoint.Value);
+                }
+            }
+            else if (e.Button == MouseButtons.Left && !_hoveredPoint.HasValue && !_isDragging) {
+                // Left click on empty space - add new point
+                int width = this.Width - _padding * 2;
+                int height = this.Height - _padding * 2;
+                int left = _padding;
+                int top = _padding;
+                int bottom = top + height;
+                
+                // Calculate grid position
+                int gridX = Math.Max(0, Math.Min(100, (e.X - left) * 100 / width));
+                int gridY = Math.Max(0, Math.Min(100, (bottom - e.Y) * 100 / height));
+                
+                // Snap to nearest 5 for easier use
+                gridX = (gridX / 5) * 5;
+                gridY = (gridY / 5) * 5;
+                
+                // Don't add if too close to existing point or at boundaries (unless unlocked)
+                if (gridX > 0 && gridX < 100) {
+                    bool tooClose = false;
+                    foreach (var pt in _points) {
+                        if (Math.Abs(pt.Key - gridX) < 5) {
+                            tooClose = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!tooClose) {
+                        PointAdded?.Invoke(gridX, gridY);
+                    }
                 }
             }
         }
