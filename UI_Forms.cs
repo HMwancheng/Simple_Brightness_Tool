@@ -1495,48 +1495,10 @@ namespace SimpleBrightness
             };
             mainPanel.Controls.Add(title);
             
-            // Description label
-            Label lblDesc = new Label {
-                Text = "💡 输入亮度 = 软件界面显示的亮度值    输出亮度 = 显示器实际呈现的亮度值",
-                Location = new Point(20, 45),
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary,
-                Font = new Font("Segoe UI", 9)
-            };
-            mainPanel.Controls.Add(lblDesc);
-            
-            // Info label for interaction
-            Label lblInfo = new Label {
-                Text = "🖱️ 左键点击空白处添加节点 | 拖拽移动节点 | 右键点击删除节点",
-                Location = new Point(20, 68),
-                AutoSize = true,
-                ForeColor = ThemeManager.Accent,
-                Font = new Font("Segoe UI", 9)
-            };
-            mainPanel.Controls.Add(lblInfo);
-            
-            // Selected point display (read-only)
-            Label lblSelected = new Label {
-                Text = "选中节点:",
-                Location = new Point(20, 95),
-                AutoSize = true,
-                ForeColor = ThemeManager.TextSecondary
-            };
-            mainPanel.Controls.Add(lblSelected);
-            
-            Label lblSelectedValue = new Label {
-                Text = "无",
-                Location = new Point(85, 95),
-                AutoSize = true,
-                ForeColor = ThemeManager.Text,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold)
-            };
-            mainPanel.Controls.Add(lblSelectedValue);
-            
-            // Graph control - positioned below controls
+            // Graph control - positioned below title, takes most of the space
             _graph = new CurveGraphControl(_points) {
-                Location = new Point(0, 125),
-                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 200),
+                Location = new Point(0, 50),
+                Size = new Size(this.ClientSize.Width, this.ClientSize.Height - 140),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
                 BackColor = ThemeManager.Background
             };
@@ -1545,15 +1507,53 @@ namespace SimpleBrightness
             // Bottom control panel
             Panel bottomPanel = new Panel {
                 Dock = DockStyle.Bottom,
-                Height = 70,
+                Height = 90,
                 BackColor = ThemeManager.Surface
             };
             this.Controls.Add(bottomPanel);
             
-            // Min/Max unlock checkbox
+            // Description label (bottom left)
+            Label lblDesc = new Label {
+                Text = "💡 输入亮度 = 软件界面显示值  |  输出亮度 = 显示器实际亮度",
+                Location = new Point(20, 10),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Font = new Font("Segoe UI", 9)
+            };
+            bottomPanel.Controls.Add(lblDesc);
+            
+            // Info label for interaction (bottom right)
+            Label lblInfo = new Label {
+                Text = "🖱️ 左键点击添加 | 拖拽移动 | 右键删除",
+                Location = new Point(480, 10),
+                AutoSize = true,
+                ForeColor = ThemeManager.Accent,
+                Font = new Font("Segoe UI", 9)
+            };
+            bottomPanel.Controls.Add(lblInfo);
+            
+            // Selected point display (center)
+            Label lblSelected = new Label {
+                Text = "选中节点:",
+                Location = new Point(20, 38),
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary
+            };
+            bottomPanel.Controls.Add(lblSelected);
+            
+            Label lblSelectedValue = new Label {
+                Text = "无",
+                Location = new Point(85, 38),
+                AutoSize = true,
+                ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold)
+            };
+            bottomPanel.Controls.Add(lblSelectedValue);
+            
+            // Min/Max unlock checkbox (bottom left)
             CheckBox chkUnlock = new CheckBox {
                 Text = "解锁 0% / 100% 限制",
-                Location = new Point(20, 25),
+                Location = new Point(20, 60),
                 AutoSize = true,
                 ForeColor = ThemeManager.TextSecondary,
                 Checked = false
@@ -1562,7 +1562,7 @@ namespace SimpleBrightness
             
             Win11Button saveBtn = new Win11Button { 
                 Text = "保存并生效", 
-                Location = new Point(640, 18), 
+                Location = new Point(640, 45), 
                 Size = new Size(120, 36),
                 BackColor = ThemeManager.Accent
             };
