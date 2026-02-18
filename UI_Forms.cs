@@ -185,6 +185,74 @@ namespace SimpleBrightness
         }
     }
     
+    // ================== Dark Mode Scrollable Panel ==================
+    public class DarkScrollPanel : Panel
+    {
+        public DarkScrollPanel()
+        {
+            this.AutoScroll = true;
+            this.BackColor = ThemeManager.Background;
+            // Enable custom scroll bar drawing
+            this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
+                         ControlStyles.OptimizedDoubleBuffer, true);
+        }
+        
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            
+            // Draw background
+            using (var brush = new SolidBrush(ThemeManager.Background))
+            {
+                e.Graphics.FillRectangle(brush, this.ClientRectangle);
+            }
+            
+            // Draw custom scrollbar if needed
+            if (this.VerticalScroll.Visible)
+            {
+                DrawVerticalScrollBar(e.Graphics);
+            }
+        }
+        
+        private void DrawVerticalScrollBar(Graphics g)
+        {
+            var scrollBarRect = new Rectangle(
+                this.ClientRectangle.Width - SystemInformation.VerticalScrollBarWidth - 1,
+                0,
+                SystemInformation.VerticalScrollBarWidth,
+                this.ClientRectangle.Height
+            );
+            
+            // Scrollbar track
+            Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
+            using (var trackBrush = new SolidBrush(trackColor))
+            {
+                g.FillRectangle(trackBrush, scrollBarRect);
+            }
+            
+            // Calculate thumb position and size
+            int thumbHeight = Math.Max(30, (int)((float)this.ClientRectangle.Height / this.VerticalScroll.Maximum * this.ClientRectangle.Height));
+            int thumbY = (int)((float)this.VerticalScroll.Value / this.VerticalScroll.Maximum * (this.ClientRectangle.Height - thumbHeight));
+            
+            // Ensure thumb stays within bounds
+            thumbY = Math.Max(0, Math.Min(thumbY, this.ClientRectangle.Height - thumbHeight));
+            
+            var thumbRect = new Rectangle(
+                scrollBarRect.X + 2,
+                thumbY,
+                scrollBarRect.Width - 4,
+                thumbHeight
+            );
+            
+            // Scrollbar thumb
+            Color thumbColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
+            using (var thumbBrush = new SolidBrush(thumbColor))
+            {
+                g.FillRectangle(thumbBrush, thumbRect);
+            }
+        }
+    }
+    
     // ================== Windows 11 Style TrackBar (6px with Double Circle Thumb) ==================
     public class Win11TrackBar : Control
     {
@@ -236,6 +304,8 @@ namespace SimpleBrightness
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             Height = 36; // Increased to accommodate larger thumb
             Cursor = Cursors.Hand;
+            // Set background to transparent so parent background shows through
+            this.BackColor = Color.Transparent;
         }
         
         protected override void OnHandleCreated(EventArgs e)
@@ -581,20 +651,22 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            int itemHeight = 50;  // Height per monitor item
-            int leftMargin = 16;  // Left margin
-            int rightMargin = 16; // Right margin
+            // Layout constants - equal margins on both sides
+            int margin = 20;      // Equal left and right margin
             int barHeight = 6;    // Progress bar height (6px)
-            int valWidth = 36;    // Value text width
-            int spacing = 12;     // Equal spacing between elements
+            int valWidth = 30;    // Value text width
+            int gap = 12;         // Gap between bar and value
+            int itemHeight = 48;  // Height per monitor item
             
-            // Calculate bar width: Total - left - right - valWidth - 2*spacing
-            int barWidth = this.Width - leftMargin - rightMargin - valWidth - (spacing * 2);
+            // Calculate bar width: Total - left margin - right margin - gap - valWidth
+            int barWidth = this.Width - margin - margin - gap - valWidth;
+            int barLeft = margin;
+            int valX = barLeft + barWidth + gap;
             
             // Calculate starting Y to center content vertically
             int totalContentHeight = (_monitors.Count * itemHeight);
             int startY = (this.Height - totalContentHeight) / 2;
-            if (startY < 12) startY = 12;
+            if (startY < 10) startY = 10;
             
             // Draw ALL monitors
             for (int i = 0; i < _monitors.Count; i++)
@@ -603,24 +675,20 @@ namespace SimpleBrightness
                 int brightness = monitor.LastBrightness;
                 int currentY = startY + (i * itemHeight);
                 
-                // Calculate text height for proper centering
-                int textHeight = 16; // Approximate height for 10pt font
-                int nameY = currentY + (itemHeight - textHeight - barHeight - 6) / 2; // Center name vertically in available space
-                int barTop = nameY + textHeight + 6; // Bar below name with 6px gap
-                int valY = barTop + (barHeight - textHeight) / 2; // Center value vertically with bar
+                // Fixed positions for perfect alignment
+                int nameY = currentY + 2;           // Name at top with small offset
+                int barTop = currentY + 22;         // Bar below name
+                int valY = barTop - 5;              // Value centered with bar (move up slightly)
 
-                // Monitor name (smaller, bold, aligned left) - moved up by half text height
+                // Monitor name (smaller, bold, aligned left)
                 using (Font nameFont = new Font("Segoe UI", 10, FontStyle.Bold))
                 using (Brush nameBrush = new SolidBrush(_textColor))
                 {
-                    Rectangle nameRect = new Rectangle(leftMargin, nameY - textHeight / 2, barWidth, textHeight + 4);
+                    Rectangle nameRect = new Rectangle(margin, nameY, barWidth, 18);
                     g.DrawString(monitor.Name, nameFont, nameBrush, nameRect);
                 }
 
                 // Progress bar - 6px height with rounded corners
-                int barLeft = leftMargin;
-                
-                // Track background
                 using (Brush trackBrush = new SolidBrush(_trackColor))
                 {
                     FillRoundedRectangle(g, trackBrush, barLeft, barTop, barWidth, barHeight, barHeight / 2);
@@ -640,9 +708,7 @@ namespace SimpleBrightness
                 using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
                 using (Brush valBrush = new SolidBrush(_textColor))
                 {
-                    // Position value text to the right of the bar with equal spacing
-                    int valX = barLeft + barWidth + spacing;
-                    Rectangle valRect = new Rectangle(valX, valY, valWidth, textHeight);
+                    Rectangle valRect = new Rectangle(valX, valY, valWidth, 16);
                     StringFormat sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
                     g.DrawString(brightness.ToString(), valFont, valBrush, valRect, sf);
                 }
@@ -751,11 +817,9 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Create scrollable container with proper background color
-            Panel scrollContainer = new Panel {
+            // Create scrollable container with dark mode scrollbar support
+            DarkScrollPanel scrollContainer = new DarkScrollPanel {
                 Dock = DockStyle.Fill,
-                AutoScroll = true,
-                BackColor = ThemeManager.Background,
                 Padding = new Padding(0)
             };
             this.Controls.Add(scrollContainer);
