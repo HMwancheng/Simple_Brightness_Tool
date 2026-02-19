@@ -190,8 +190,7 @@ namespace SimpleBrightness
     public class DarkScrollPanel : Panel
     {
         private VScrollBar _customScrollBar;
-        private int _scrollValue = 0;
-        private List<Control> _scrollableControls = new List<Control>();
+        private Control? _contentControl;
 
         public DarkScrollPanel()
         {
@@ -206,7 +205,7 @@ namespace SimpleBrightness
                 Width = 12
             };
             _customScrollBar.ValueChanged += (s, e) => {
-                ScrollTo(_customScrollBar.Value);
+                UpdateContentPosition();
             };
             this.Controls.Add(_customScrollBar);
         }
@@ -214,11 +213,11 @@ namespace SimpleBrightness
         protected override void OnControlAdded(ControlEventArgs e)
         {
             base.OnControlAdded(e);
-            if (e.Control != _customScrollBar)
+            if (e.Control != _customScrollBar && _contentControl == null)
             {
-                _scrollableControls.Add(e.Control);
-                e.Control.LocationChanged += (s, ev) => UpdateScrollBar();
-                e.Control.SizeChanged += (s, ev) => UpdateScrollBar();
+                _contentControl = e.Control;
+                _contentControl.LocationChanged += (s, ev) => UpdateScrollBar();
+                _contentControl.SizeChanged += (s, ev) => UpdateScrollBar();
             }
         }
 
@@ -228,54 +227,41 @@ namespace SimpleBrightness
             UpdateScrollBar();
         }
 
-        private void ScrollTo(int value)
+        private void UpdateContentPosition()
         {
-            int delta = value - _scrollValue;
-            _scrollValue = value;
-            
-            // Move all scrollable controls
-            foreach (var ctrl in _scrollableControls)
+            if (_contentControl != null)
             {
-                if (ctrl != null && !ctrl.IsDisposed)
-                {
-                    ctrl.Top -= delta;
-                }
+                _contentControl.Top = -_customScrollBar.Value;
             }
         }
 
         private void UpdateScrollBar()
         {
-            // Calculate content height
-            int contentHeight = 0;
-            foreach (Control ctrl in this.Controls)
-            {
-                if (ctrl != _customScrollBar && ctrl.Visible)
-                {
-                    contentHeight = Math.Max(contentHeight, ctrl.Bottom + _scrollValue);
-                }
-            }
+            if (_contentControl == null) return;
 
-            bool needScrollBar = contentHeight > this.ClientSize.Height;
+            int contentHeight = _contentControl.Height;
+            int viewHeight = this.ClientSize.Height;
+            bool needScrollBar = contentHeight > viewHeight;
             
             if (needScrollBar)
             {
-                int maxScroll = contentHeight - this.ClientSize.Height;
+                int maxScroll = contentHeight - viewHeight;
                 _customScrollBar.Maximum = maxScroll + _customScrollBar.LargeChange - 1;
-                _customScrollBar.LargeChange = Math.Max(10, this.ClientSize.Height / 10);
-                _customScrollBar.SmallChange = 20;
+                _customScrollBar.LargeChange = Math.Max(20, viewHeight / 5);
+                _customScrollBar.SmallChange = 30;
                 _customScrollBar.Visible = true;
                 
                 // Style the scrollbar
                 _customScrollBar.BackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
+                
+                // Adjust content width to make room for scrollbar
+                _contentControl.Width = this.ClientSize.Width - _customScrollBar.Width;
             }
             else
             {
                 _customScrollBar.Visible = false;
-                // Reset scroll position
-                if (_scrollValue != 0)
-                {
-                    ScrollTo(0);
-                }
+                _contentControl.Top = 0;
+                _contentControl.Width = this.ClientSize.Width;
             }
         }
 
@@ -616,7 +602,7 @@ namespace SimpleBrightness
         
         private static Icon CreateIconForSize(int iconSize) {
             // 字体大小根据图标尺寸调整 - 使用更大的字体比例
-            int fontSize = Math.Max(12, iconSize * 3 / 2);
+            int fontSize = Math.Max(12, iconSize);
             
             using (Bitmap bmp = new Bitmap(iconSize, iconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
                 using (Graphics g = Graphics.FromImage(bmp)) {
