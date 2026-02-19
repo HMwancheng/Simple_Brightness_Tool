@@ -613,17 +613,15 @@ namespace SimpleBrightness
                     // 使用Segoe MDL2 Assets字体绘制亮度图标
                     // 使用GraphicsUnit.Pixel确保字体大小准确
                     using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
-                        // 使用MeasureString获取更准确的尺寸
-                        SizeF textSize = g.MeasureString("\uE706", iconFont);
+                        // 使用TextRenderer.MeasureText获取更准确的尺寸
+                        Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
                         
-                        // 确保图标居中
-                        float x = (iconSize - textSize.Width) / 2;
-                        float y = (iconSize - textSize.Height) / 2;
+                        // 确保图标居中，稍微下移2px以视觉居中
+                        int x = (iconSize - textSize.Width) / 2;
+                        int y = (iconSize - textSize.Height) / 2 + 2;
                         
-                        // 使用DrawString绘制，在高DPI下更清晰
-                        using (Brush brush = new SolidBrush(Color.White)) {
-                            g.DrawString("\uE706", iconFont, brush, x, y);
-                        }
+                        // 使用TextRenderer绘制，在系统托盘更准确
+                        TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
                     }
                 }
                 
@@ -965,14 +963,11 @@ namespace SimpleBrightness
             };
             this.Controls.Add(scrollContainer);
             
-            FlowLayoutPanel panel = new FlowLayoutPanel { 
-                FlowDirection = FlowDirection.TopDown, 
-                WrapContents = false, 
-                AutoSize = true, 
-                AutoSizeMode = AutoSizeMode.GrowAndShrink, 
+            Panel panel = new Panel { 
                 Padding = new Padding(24), 
                 Width = 400,
-                BackColor = ThemeManager.Background
+                BackColor = ThemeManager.Background,
+                AutoSize = false
             };
             scrollContainer.Controls.Add(panel);
             
