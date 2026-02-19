@@ -697,7 +697,7 @@ namespace SimpleBrightness
             int itemHeight = 50;  // Increased for better spacing
             int padding = 20;
             int totalHeight = padding * 2 + (_monitors.Count * itemHeight);
-            this.Size = new Size(340, Math.Max(100, totalHeight));
+            this.Size = new Size(306, Math.Max(100, totalHeight));
             
             _timer = new System.Windows.Forms.Timer { Interval = 2000 };
             _timer.Tick += (s, e) => this.Hide();
@@ -802,7 +802,7 @@ namespace SimpleBrightness
             int startY = margin;
             
             // Icon font for brightness symbol - use EC8A icon
-            using (Font iconFont = new Font("Segoe MDL2 Assets", 16, FontStyle.Regular))
+            using (Font iconFont = new Font("Segoe MDL2 Assets", 13, FontStyle.Regular))
             using (Brush iconBrush = new SolidBrush(_textColor))
             {
                 // Draw ALL monitors
@@ -840,7 +840,7 @@ namespace SimpleBrightness
                     }
 
                     // Value text - vertically centered with the bar using TextRenderer
-                    using (Font valFont = new Font("Segoe UI", 11, FontStyle.Bold))
+                    using (Font valFont = new Font("Segoe UI", 11, FontStyle.Regular))
                     {
                         string valText = brightness.ToString();
                         Size valTextSize = TextRenderer.MeasureText(valText, valFont);
