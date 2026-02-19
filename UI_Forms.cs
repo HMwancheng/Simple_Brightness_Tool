@@ -189,15 +189,13 @@ namespace SimpleBrightness
     // ================== Dark Mode Scrollable Panel ==================
     public class DarkScrollPanel : Panel
     {
-        private bool _isDraggingThumb = false;
-        private Point _dragStartPos;
-        private int _dragStartValue;
         private VScrollBar _customScrollBar;
+        private int _scrollValue = 0;
+        private List<Control> _scrollableControls = new List<Control>();
 
         public DarkScrollPanel()
         {
             this.BackColor = ThemeManager.Background;
-            // Don't use AutoScroll, we'll implement custom scrolling
             this.AutoScroll = false;
             
             // Create custom scrollbar
@@ -205,10 +203,10 @@ namespace SimpleBrightness
             {
                 Dock = DockStyle.Right,
                 Visible = false,
-                Width = 12 // Slightly thinner than standard
+                Width = 12
             };
             _customScrollBar.ValueChanged += (s, e) => {
-                this.AutoScrollPosition = new Point(0, _customScrollBar.Value);
+                ScrollTo(_customScrollBar.Value);
             };
             this.Controls.Add(_customScrollBar);
         }
@@ -218,6 +216,7 @@ namespace SimpleBrightness
             base.OnControlAdded(e);
             if (e.Control != _customScrollBar)
             {
+                _scrollableControls.Add(e.Control);
                 e.Control.LocationChanged += (s, ev) => UpdateScrollBar();
                 e.Control.SizeChanged += (s, ev) => UpdateScrollBar();
             }
@@ -229,6 +228,21 @@ namespace SimpleBrightness
             UpdateScrollBar();
         }
 
+        private void ScrollTo(int value)
+        {
+            int delta = value - _scrollValue;
+            _scrollValue = value;
+            
+            // Move all scrollable controls
+            foreach (var ctrl in _scrollableControls)
+            {
+                if (ctrl != null && !ctrl.IsDisposed)
+                {
+                    ctrl.Top -= delta;
+                }
+            }
+        }
+
         private void UpdateScrollBar()
         {
             // Calculate content height
@@ -237,7 +251,7 @@ namespace SimpleBrightness
             {
                 if (ctrl != _customScrollBar && ctrl.Visible)
                 {
-                    contentHeight = Math.Max(contentHeight, ctrl.Bottom);
+                    contentHeight = Math.Max(contentHeight, ctrl.Bottom + _scrollValue);
                 }
             }
 
@@ -245,9 +259,11 @@ namespace SimpleBrightness
             
             if (needScrollBar)
             {
+                int maxScroll = contentHeight - this.ClientSize.Height;
+                _customScrollBar.Maximum = maxScroll + _customScrollBar.LargeChange - 1;
+                _customScrollBar.LargeChange = Math.Max(10, this.ClientSize.Height / 10);
+                _customScrollBar.SmallChange = 20;
                 _customScrollBar.Visible = true;
-                _customScrollBar.Maximum = contentHeight - this.ClientSize.Height + _customScrollBar.LargeChange - 1;
-                _customScrollBar.LargeChange = this.ClientSize.Height;
                 
                 // Style the scrollbar
                 _customScrollBar.BackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
@@ -255,6 +271,11 @@ namespace SimpleBrightness
             else
             {
                 _customScrollBar.Visible = false;
+                // Reset scroll position
+                if (_scrollValue != 0)
+                {
+                    ScrollTo(0);
+                }
             }
         }
 
@@ -263,7 +284,8 @@ namespace SimpleBrightness
             base.OnMouseWheel(e);
             if (_customScrollBar.Visible)
             {
-                int newValue = _customScrollBar.Value - e.Delta / 3;
+                int delta = e.Delta / 3;
+                int newValue = _customScrollBar.Value - delta;
                 newValue = Math.Max(0, Math.Min(newValue, _customScrollBar.Maximum - _customScrollBar.LargeChange + 1));
                 _customScrollBar.Value = newValue;
             }
@@ -559,8 +581,18 @@ namespace SimpleBrightness
     public static class IconDrawer {
         // 缓存不同尺寸的图标
         private static Dictionary<int, Icon> _iconCache = new Dictionary<int, Icon>();
+        private static int _lastDpi = 0;
         
         public static Icon DrawNativeIcon() {
+            // 获取当前DPI
+            int currentDpi = (int)(GetSystemDpiScale() * 96);
+            
+            // 如果DPI变化，清除缓存
+            if (_lastDpi != 0 && _lastDpi != currentDpi) {
+                ClearCache();
+            }
+            _lastDpi = currentDpi;
+            
             // 获取当前DPI缩放下的图标尺寸
             int iconSize = GetTrayIconSize();
             
@@ -575,9 +607,16 @@ namespace SimpleBrightness
             return icon;
         }
         
+        public static void ClearCache() {
+            foreach (var icon in _iconCache.Values) {
+                icon.Dispose();
+            }
+            _iconCache.Clear();
+        }
+        
         private static Icon CreateIconForSize(int iconSize) {
             // 字体大小根据图标尺寸调整 - 使用更大的字体比例
-            int fontSize = Math.Max(10, iconSize * 3 / 4);
+            int fontSize = Math.Max(12, iconSize * 3 / 2);
             
             using (Bitmap bmp = new Bitmap(iconSize, iconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
                 using (Graphics g = Graphics.FromImage(bmp)) {
