@@ -2089,6 +2089,8 @@ namespace SimpleBrightness
                 _selectedPoint = _hoveredPoint;
                 _isDragging = true;
                 _dragStartPos = e.Location;
+                // Save state for undo when starting to drag
+                SaveStateForUndo();
                 PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
                 this.Invalidate();
             } else {
