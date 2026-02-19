@@ -717,6 +717,9 @@ namespace SimpleBrightness
             menu.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
             menu.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
 
+            // Set menu render mode for custom styling
+            menu.Renderer = new DarkToolStripRenderer(isDarkMode);
+
             // Handle menu opening to style items
             menu.Opening += (s, e) =>
             {
@@ -746,17 +749,90 @@ namespace SimpleBrightness
                     menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
                     menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
                 };
-
-                // Style separator
-                if (menuItem is ToolStripSeparator)
-                {
-                    // Separators don't need special styling
-                }
             }
             else if (item is ToolStripSeparator separator)
             {
-                // Separator styling if needed
+                separator.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
             }
+        }
+
+        // Custom ToolStripRenderer for dark mode menu
+        private class DarkToolStripRenderer : ToolStripProfessionalRenderer
+        {
+            private bool _isDarkMode;
+
+            public DarkToolStripRenderer(bool isDarkMode) : base(new DarkColorTable(isDarkMode))
+            {
+                _isDarkMode = isDarkMode;
+            }
+
+            protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+            {
+                // Draw custom check mark background
+                Rectangle rect = e.ImageRectangle;
+                using (Brush brush = new SolidBrush(_isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control))
+                {
+                    e.Graphics.FillRectangle(brush, rect);
+                }
+
+                // Draw check mark
+                if (e.Item is ToolStripMenuItem menuItem && menuItem.Checked)
+                {
+                    using (Brush checkBrush = new SolidBrush(_isDarkMode ? Color.White : SystemColors.ControlText))
+                    {
+                        // Draw a simple check mark
+                        Point[] checkPoints = new Point[]
+                        {
+                            new Point(rect.Left + 2, rect.Top + rect.Height / 2),
+                            new Point(rect.Left + rect.Width / 2 - 2, rect.Bottom - 4),
+                            new Point(rect.Right - 2, rect.Top + 2)
+                        };
+                        using (Pen checkPen = new Pen(checkBrush, 2))
+                        {
+                            e.Graphics.DrawLines(checkPen, checkPoints);
+                        }
+                    }
+                }
+            }
+
+            protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+            {
+                if (_isDarkMode)
+                {
+                    using (Pen pen = new Pen(Color.FromArgb(60, 60, 60)))
+                    {
+                        e.Graphics.DrawLine(pen, e.Item.ContentRectangle.Left, e.Item.ContentRectangle.Height / 2,
+                            e.Item.ContentRectangle.Right, e.Item.ContentRectangle.Height / 2);
+                    }
+                }
+                else
+                {
+                    base.OnRenderSeparator(e);
+                }
+            }
+        }
+
+        // Custom color table for dark mode
+        private class DarkColorTable : ProfessionalColorTable
+        {
+            private bool _isDarkMode;
+
+            public DarkColorTable(bool isDarkMode)
+            {
+                _isDarkMode = isDarkMode;
+            }
+
+            public override Color MenuBorder => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuBorder;
+            public override Color MenuItemBorder => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemBorder;
+            public override Color MenuItemSelected => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemSelected;
+            public override Color MenuItemSelectedGradientBegin => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemSelectedGradientBegin;
+            public override Color MenuItemSelectedGradientEnd => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemSelectedGradientEnd;
+            public override Color MenuStripGradientBegin => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.MenuStripGradientBegin;
+            public override Color MenuStripGradientEnd => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.MenuStripGradientEnd;
+            public override Color ToolStripDropDownBackground => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ToolStripDropDownBackground;
+            public override Color ImageMarginGradientBegin => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ImageMarginGradientBegin;
+            public override Color ImageMarginGradientMiddle => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ImageMarginGradientMiddle;
+            public override Color ImageMarginGradientEnd => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ImageMarginGradientEnd;
         }
 
         // 配置迁移：将旧版ID格式的配置迁移到新版

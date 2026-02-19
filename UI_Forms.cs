@@ -618,7 +618,7 @@ namespace SimpleBrightness
                         
                         // 确保图标居中，下移1px使其视觉居中
                         float x = (float)Math.Round((iconSize - textSize.Width) / 2);
-                        float y = (float)Math.Round((iconSize - textSize.Height) / 2) + 1;
+                        float y = (float)Math.Round((iconSize - textSize.Height) / 2) + 2;
                         
                         // 使用DrawString绘制，在高DPI下更清晰
                         using (Brush brush = new SolidBrush(Color.White)) {
@@ -697,7 +697,7 @@ namespace SimpleBrightness
             int itemHeight = 50;  // Increased for better spacing
             int padding = 20;
             int totalHeight = padding * 2 + (_monitors.Count * itemHeight);
-            this.Size = new Size(306, Math.Max(100, totalHeight));
+            this.Size = new Size(290, Math.Max(100, totalHeight));
             
             _timer = new System.Windows.Forms.Timer { Interval = 2000 };
             _timer.Tick += (s, e) => this.Hide();
@@ -840,7 +840,7 @@ namespace SimpleBrightness
                     }
 
                     // Value text - vertically centered with the bar using TextRenderer
-                    using (Font valFont = new Font("Segoe UI", 11, FontStyle.Regular))
+                    using (Font valFont = new Font("Segoe UI", 10.5f, FontStyle.Regular))
                     {
                         string valText = brightness.ToString();
                         Size valTextSize = TextRenderer.MeasureText(valText, valFont);
