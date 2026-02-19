@@ -598,10 +598,11 @@ namespace SimpleBrightness
             // 使用SM_CXSMICON获取系统推荐的小图标尺寸
             int systemIconSize = GetSystemMetrics(SM_CXSMICON);
             if (systemIconSize > 0) {
-                return systemIconSize;
+                // 使用系统推荐的尺寸，但确保不小于16
+                return Math.Max(16, systemIconSize);
             }
             
-            // 备用：根据DPI计算
+            // 备用：根据DPI计算，使用更大的尺寸
             if (dpiScale >= 2.0f) return 32;
             if (dpiScale >= 1.5f) return 24;
             if (dpiScale >= 1.25f) return 20;
@@ -912,10 +913,12 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Create scrollable container with dark mode scrollbar support
-            DarkScrollPanel scrollContainer = new DarkScrollPanel {
+            // Create scrollable container - use standard Panel with AutoScroll
+            Panel scrollContainer = new Panel {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(0)
+                Padding = new Padding(0),
+                AutoScroll = true,
+                BackColor = ThemeManager.Background
             };
             this.Controls.Add(scrollContainer);
             
@@ -926,8 +929,7 @@ namespace SimpleBrightness
                 AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                 Padding = new Padding(24), 
                 Width = 400,
-                BackColor = Color.Transparent,
-                AutoScroll = false  // Disable FlowLayoutPanel's own scrollbar
+                BackColor = ThemeManager.Background
             };
             scrollContainer.Controls.Add(panel);
             
@@ -1470,7 +1472,7 @@ namespace SimpleBrightness
             _points = new Dictionary<int, int>(GetCurveWithFallback());
             _tooltip = new ToolTip();
             
-            this.Size = new Size(900, 700);
+            this.Size = new Size(1050, 850);
             this.BackColor = ThemeManager.Background;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Text = "曲线编辑器";
