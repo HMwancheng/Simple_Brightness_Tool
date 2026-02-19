@@ -718,7 +718,7 @@ namespace SimpleBrightness
             menu.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
 
             // Set menu render mode for custom styling
-            menu.Renderer = new DarkToolStripRenderer(isDarkMode);
+            menu.Renderer = new ThemedToolStripRenderer(isDarkMode);
 
             // Handle menu opening to style items
             menu.Opening += (s, e) =>
@@ -756,12 +756,12 @@ namespace SimpleBrightness
             }
         }
 
-        // Custom ToolStripRenderer for dark mode menu
-        private class DarkToolStripRenderer : ToolStripProfessionalRenderer
+        // Custom ToolStripRenderer for themed menu
+        private class ThemedToolStripRenderer : ToolStripProfessionalRenderer
         {
             private bool _isDarkMode;
 
-            public DarkToolStripRenderer(bool isDarkMode) : base(new DarkColorTable(isDarkMode))
+            public ThemedToolStripRenderer(bool isDarkMode) : base(new ThemedColorTable(isDarkMode))
             {
                 _isDarkMode = isDarkMode;
             }
@@ -770,7 +770,8 @@ namespace SimpleBrightness
             {
                 // Draw custom check mark background
                 Rectangle rect = e.ImageRectangle;
-                using (Brush brush = new SolidBrush(_isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control))
+                Color bgColor = _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+                using (Brush brush = new SolidBrush(bgColor))
                 {
                     e.Graphics.FillRectangle(brush, rect);
                 }
@@ -778,7 +779,8 @@ namespace SimpleBrightness
                 // Draw check mark
                 if (e.Item is ToolStripMenuItem menuItem && menuItem.Checked)
                 {
-                    using (Brush checkBrush = new SolidBrush(_isDarkMode ? Color.White : SystemColors.ControlText))
+                    Color checkColor = _isDarkMode ? Color.White : SystemColors.ControlText;
+                    using (Brush checkBrush = new SolidBrush(checkColor))
                     {
                         // Draw a simple check mark
                         Point[] checkPoints = new Point[]
@@ -797,42 +799,49 @@ namespace SimpleBrightness
 
             protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
             {
-                if (_isDarkMode)
+                Color separatorColor = _isDarkMode ? Color.FromArgb(60, 60, 60) : Color.FromArgb(200, 200, 200);
+                using (Pen pen = new Pen(separatorColor))
                 {
-                    using (Pen pen = new Pen(Color.FromArgb(60, 60, 60)))
-                    {
-                        e.Graphics.DrawLine(pen, e.Item.ContentRectangle.Left, e.Item.ContentRectangle.Height / 2,
-                            e.Item.ContentRectangle.Right, e.Item.ContentRectangle.Height / 2);
-                    }
+                    e.Graphics.DrawLine(pen, e.Item.ContentRectangle.Left, e.Item.ContentRectangle.Height / 2,
+                        e.Item.ContentRectangle.Right, e.Item.ContentRectangle.Height / 2);
                 }
-                else
+            }
+
+            protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+            {
+                // Override to prevent white margin in dark mode
+                Color marginColor = _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+                using (Brush brush = new SolidBrush(marginColor))
                 {
-                    base.OnRenderSeparator(e);
+                    e.Graphics.FillRectangle(brush, e.AffectedBounds);
                 }
             }
         }
 
-        // Custom color table for dark mode
-        private class DarkColorTable : ProfessionalColorTable
+        // Custom color table for themed menu
+        private class ThemedColorTable : ProfessionalColorTable
         {
             private bool _isDarkMode;
 
-            public DarkColorTable(bool isDarkMode)
+            public ThemedColorTable(bool isDarkMode)
             {
                 _isDarkMode = isDarkMode;
             }
 
-            public override Color MenuBorder => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuBorder;
-            public override Color MenuItemBorder => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemBorder;
-            public override Color MenuItemSelected => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemSelected;
-            public override Color MenuItemSelectedGradientBegin => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemSelectedGradientBegin;
-            public override Color MenuItemSelectedGradientEnd => _isDarkMode ? Color.FromArgb(60, 60, 60) : base.MenuItemSelectedGradientEnd;
-            public override Color MenuStripGradientBegin => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.MenuStripGradientBegin;
-            public override Color MenuStripGradientEnd => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.MenuStripGradientEnd;
-            public override Color ToolStripDropDownBackground => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ToolStripDropDownBackground;
-            public override Color ImageMarginGradientBegin => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ImageMarginGradientBegin;
-            public override Color ImageMarginGradientMiddle => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ImageMarginGradientMiddle;
-            public override Color ImageMarginGradientEnd => _isDarkMode ? Color.FromArgb(45, 45, 45) : base.ImageMarginGradientEnd;
+            public override Color MenuBorder => _isDarkMode ? Color.FromArgb(60, 60, 60) : Color.FromArgb(200, 200, 200);
+            public override Color MenuItemBorder => _isDarkMode ? Color.FromArgb(60, 60, 60) : Color.FromArgb(200, 200, 200);
+            public override Color MenuItemSelected => _isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
+            public override Color MenuItemSelectedGradientBegin => _isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
+            public override Color MenuItemSelectedGradientEnd => _isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
+            public override Color MenuStripGradientBegin => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color MenuStripGradientEnd => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color ToolStripDropDownBackground => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color ImageMarginGradientBegin => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color ImageMarginGradientMiddle => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color ImageMarginGradientEnd => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color CheckBackground => _isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            public override Color CheckSelectedBackground => _isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
+            public override Color CheckPressedBackground => _isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
         }
 
         // 配置迁移：将旧版ID格式的配置迁移到新版

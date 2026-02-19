@@ -202,7 +202,8 @@ namespace SimpleBrightness
             {
                 Dock = DockStyle.Right,
                 Visible = false,
-                Width = 12
+                Width = 12,
+                BackColor = ThemeManager.Background
             };
             _customScrollBar.ValueChanged += (s, e) => {
                 UpdateContentPosition();
@@ -779,9 +780,10 @@ namespace SimpleBrightness
             int barWidth = availableContentWidth - leftIconPadding - iconWidth - totalGaps - valWidth;
             
             // Calculate positions - equal left/right margins
-            int iconX = margin + leftIconPadding;
-            int barLeft = iconX + iconWidth + elementGap;
-            int valX = barLeft + barWidth + elementGap;
+            int iconX = margin + leftIconPadding - 4;  // 图标左移4px
+            int barLeft = iconX + iconWidth + elementGap + 3;  // 滑块中心点右移3px
+            int valX = barLeft + barWidth + elementGap + 10;  // 数值右移10px
+            barWidth += 6;  // 滑块延长6px
             
             // Auto-calculate item height with generous padding
             int itemHeight = barHeight + 24;  // 12px padding top and bottom
