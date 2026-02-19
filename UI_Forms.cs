@@ -189,69 +189,92 @@ namespace SimpleBrightness
     // ================== Dark Mode Scrollable Panel ==================
     public class DarkScrollPanel : Panel
     {
+        private bool _isDraggingThumb = false;
+        private Point _dragStartPos;
+        private int _dragStartValue;
+        
         public DarkScrollPanel()
         {
             this.AutoScroll = true;
             this.BackColor = ThemeManager.Background;
-            // Enable custom scroll bar drawing
-            this.SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
-                         ControlStyles.OptimizedDoubleBuffer, true);
+            // Don't use UserPaint to allow normal child control rendering
+            this.SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
         }
         
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void WndProc(ref Message m)
         {
-            base.OnPaint(e);
-            
-            // Draw background
-            using (var brush = new SolidBrush(ThemeManager.Background))
+            // Intercept scrollbar painting messages
+            if (m.Msg == 0x85 || m.Msg == 0x14 || m.Msg == 0x47) // WM_NCPAINT, WM_ERASEBKGND, WM_WINDOWPOSCHANGED
             {
-                e.Graphics.FillRectangle(brush, this.ClientRectangle);
+                base.WndProc(ref m);
+                if (this.VerticalScroll.Visible)
+                {
+                    DrawCustomScrollBar();
+                }
+                return;
             }
             
-            // Draw custom scrollbar if needed
-            if (this.VerticalScroll.Visible)
+            base.WndProc(ref m);
+        }
+        
+        private void DrawCustomScrollBar()
+        {
+            if (!this.VerticalScroll.Visible) return;
+            
+            IntPtr hdc = GetWindowDC(this.Handle);
+            try
             {
-                DrawVerticalScrollBar(e.Graphics);
+                using (Graphics g = Graphics.FromHdc(hdc))
+                {
+                    var scrollBarRect = new Rectangle(
+                        this.ClientRectangle.Width,
+                        0,
+                        SystemInformation.VerticalScrollBarWidth,
+                        this.ClientRectangle.Height
+                    );
+                    
+                    // Scrollbar track - use theme background color
+                    Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
+                    using (var trackBrush = new SolidBrush(trackColor))
+                    {
+                        g.FillRectangle(trackBrush, scrollBarRect);
+                    }
+                    
+                    // Calculate thumb position and size
+                    int contentHeight = this.VerticalScroll.Maximum - this.VerticalScroll.Minimum;
+                    int viewHeight = this.ClientRectangle.Height;
+                    int thumbHeight = Math.Max(30, (int)((float)viewHeight / contentHeight * viewHeight));
+                    int thumbY = (int)((float)this.VerticalScroll.Value / contentHeight * (viewHeight - thumbHeight));
+                    
+                    // Ensure thumb stays within bounds
+                    thumbY = Math.Max(0, Math.Min(thumbY, viewHeight - thumbHeight));
+                    
+                    var thumbRect = new Rectangle(
+                        scrollBarRect.X + 2,
+                        thumbY,
+                        scrollBarRect.Width - 4,
+                        thumbHeight
+                    );
+                    
+                    // Scrollbar thumb
+                    Color thumbColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
+                    using (var thumbBrush = new SolidBrush(thumbColor))
+                    {
+                        g.FillRectangle(thumbBrush, thumbRect);
+                    }
+                }
+            }
+            finally
+            {
+                ReleaseDC(this.Handle, hdc);
             }
         }
         
-        private void DrawVerticalScrollBar(Graphics g)
-        {
-            var scrollBarRect = new Rectangle(
-                this.ClientRectangle.Width - SystemInformation.VerticalScrollBarWidth - 1,
-                0,
-                SystemInformation.VerticalScrollBarWidth,
-                this.ClientRectangle.Height
-            );
-            
-            // Scrollbar track
-            Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
-            using (var trackBrush = new SolidBrush(trackColor))
-            {
-                g.FillRectangle(trackBrush, scrollBarRect);
-            }
-            
-            // Calculate thumb position and size
-            int thumbHeight = Math.Max(30, (int)((float)this.ClientRectangle.Height / this.VerticalScroll.Maximum * this.ClientRectangle.Height));
-            int thumbY = (int)((float)this.VerticalScroll.Value / this.VerticalScroll.Maximum * (this.ClientRectangle.Height - thumbHeight));
-            
-            // Ensure thumb stays within bounds
-            thumbY = Math.Max(0, Math.Min(thumbY, this.ClientRectangle.Height - thumbHeight));
-            
-            var thumbRect = new Rectangle(
-                scrollBarRect.X + 2,
-                thumbY,
-                scrollBarRect.Width - 4,
-                thumbHeight
-            );
-            
-            // Scrollbar thumb
-            Color thumbColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
-            using (var thumbBrush = new SolidBrush(thumbColor))
-            {
-                g.FillRectangle(thumbBrush, thumbRect);
-            }
-        }
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindowDC(IntPtr hWnd);
+        
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
     }
     
     // ================== Windows 11 Style TrackBar (6px with Double Circle Thumb) ==================
@@ -598,8 +621,11 @@ namespace SimpleBrightness
             // 使用SM_CXSMICON获取系统推荐的小图标尺寸
             int systemIconSize = GetSystemMetrics(SM_CXSMICON);
             if (systemIconSize > 0) {
-                // 使用系统推荐的尺寸，但确保不小于16
-                return Math.Max(16, systemIconSize);
+                // 使用系统推荐的尺寸，但放大一级以确保清晰可见
+                if (systemIconSize >= 32) return 32;
+                if (systemIconSize >= 24) return 24;
+                if (systemIconSize >= 20) return 20;
+                return 16;
             }
             
             // 备用：根据DPI计算，使用更大的尺寸
@@ -913,12 +939,10 @@ namespace SimpleBrightness
                 Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
             };
             
-            // Create scrollable container - use standard Panel with AutoScroll
-            Panel scrollContainer = new Panel {
+            // Create scrollable container with custom scrollbar
+            DarkScrollPanel scrollContainer = new DarkScrollPanel {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(0),
-                AutoScroll = true,
-                BackColor = ThemeManager.Background
+                Padding = new Padding(0)
             };
             this.Controls.Add(scrollContainer);
             
@@ -1636,23 +1660,20 @@ namespace SimpleBrightness
             };
             bottomTable.Controls.Add(lblInfo, 0, 1);
             
-            // Key event handler - use PreviewKeyDown for better capture
-            this.PreviewKeyDown += (s, e) => {
-                // Handle arrow keys and Ctrl+Z
-                if (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down || 
-                    e.KeyCode == Keys.Left || e.KeyCode == Keys.Right ||
-                    (e.Control && e.KeyCode == Keys.Z)) {
-                    e.IsInputKey = true;
-                }
-            };
-            
+            // Key event handler
+            this.KeyPreview = true;
             this.KeyDown += (s, e) => {
                 // Ctrl+Z for undo
                 if (e.Control && e.KeyCode == Keys.Z) {
                     _graph.Undo();
-                    if (_graph.SelectedPoint.HasValue && _points.ContainsKey(_graph.SelectedPoint.Value)) {
+                    // Update display after undo - check if selected point still exists
+                    if (_graph.SelectedPoint.HasValue) {
                         int sx = _graph.SelectedPoint.Value;
-                        lblSelectedValue.Text = $"输入{sx}% → 输出{_points[sx]}%";
+                        if (_points.ContainsKey(sx)) {
+                            lblSelectedValue.Text = $"输入{sx}% → 输出{_points[sx]}%";
+                        } else {
+                            lblSelectedValue.Text = "无";
+                        }
                     } else {
                         lblSelectedValue.Text = "无";
                     }
@@ -1675,18 +1696,20 @@ namespace SimpleBrightness
                                 y = Math.Min(100, y + 1);
                                 modified = true;
                             }
+                            e.Handled = true;
                             break;
                         case Keys.Down:
                             if (!isFixed || _showMinMaxUnlock) {
                                 y = Math.Max(0, y - 1);
                                 modified = true;
                             }
+                            e.Handled = true;
                             break;
                         case Keys.Left:
                             if (!isFixed) {
-                                _graph.SaveStateForUndo();
                                 int newX = Math.Max(1, x - 1);
                                 if (!_points.ContainsKey(newX)) {
+                                    _graph.SaveStateForUndo();
                                     _points.Remove(x);
                                     _points[newX] = y;
                                     _graph.SetSelectedPoint(newX);
@@ -1694,12 +1717,13 @@ namespace SimpleBrightness
                                     _graph.Invalidate();
                                 }
                             }
+                            e.Handled = true;
                             break;
                         case Keys.Right:
                             if (!isFixed) {
-                                _graph.SaveStateForUndo();
                                 int newX = Math.Min(99, x + 1);
                                 if (!_points.ContainsKey(newX)) {
+                                    _graph.SaveStateForUndo();
                                     _points.Remove(x);
                                     _points[newX] = y;
                                     _graph.SetSelectedPoint(newX);
@@ -1707,6 +1731,7 @@ namespace SimpleBrightness
                                     _graph.Invalidate();
                                 }
                             }
+                            e.Handled = true;
                             break;
                     }
                     
@@ -1718,8 +1743,6 @@ namespace SimpleBrightness
                             _graph.ApplyPreview(x, y);
                         }
                     }
-                    
-                    e.Handled = true;
                 }
             };
             
@@ -2004,9 +2027,9 @@ namespace SimpleBrightness
                 this.Invalidate();
             }
             
-            // Handle dragging - only if already clicked once and moved enough
-            if (_isDragging && _selectedPoint.HasValue && e.Button == MouseButtons.Left && _hasClickedOnce) {
-                // Check if moved enough to start dragging
+            // Handle dragging
+            if (_isDragging && _selectedPoint.HasValue && e.Button == MouseButtons.Left) {
+                // Check if moved enough to start dragging (prevent accidental drags)
                 double moveDist = Math.Sqrt(Math.Pow(e.X - _dragStartPos.X, 2) + Math.Pow(e.Y - _dragStartPos.Y, 2));
                 if (moveDist < DragThreshold) return;
                 
@@ -2038,22 +2061,14 @@ namespace SimpleBrightness
             this.Focus(); // Take focus for keyboard events
             
             if (_hoveredPoint.HasValue) {
-                if (_selectedPoint == _hoveredPoint && !_hasClickedOnce) {
-                    // Second click on same point - prepare for dragging
-                    _hasClickedOnce = true;
-                    _dragStartPos = e.Location;
-                    _isDragging = true;
-                } else {
-                    // First click on point - just select it
-                    _selectedPoint = _hoveredPoint;
-                    _hasClickedOnce = false;
-                    _isDragging = false;
-                    PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
-                    this.Invalidate();
-                }
+                // Select the point and enable dragging immediately
+                _selectedPoint = _hoveredPoint;
+                _isDragging = true;
+                _dragStartPos = e.Location;
+                PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
+                this.Invalidate();
             } else {
                 _selectedPoint = null;
-                _hasClickedOnce = false;
                 _isDragging = false;
                 this.Invalidate();
             }
