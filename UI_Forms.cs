@@ -540,36 +540,52 @@ namespace SimpleBrightness
     
     // ================== Icon ==================
     public static class IconDrawer {
+        // 缓存不同尺寸的图标
+        private static Dictionary<int, Icon> _iconCache = new Dictionary<int, Icon>();
+        
         public static Icon DrawNativeIcon() {
-            // 根据系统DPI获取合适的托盘图标尺寸
-            // Windows托盘图标标准尺寸: 16x16 (100%), 20x20 (125%), 24x24 (150%), 32x32 (200%)
+            // 获取当前DPI缩放下的图标尺寸
             int iconSize = GetTrayIconSize();
-            int fontSize = iconSize / 2; // 字体大小约为图标的一半
-
-            using (Bitmap bmp = new Bitmap(iconSize, iconSize))
-            using (Graphics g = Graphics.FromImage(bmp)) {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-                g.Clear(Color.Transparent);
-                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-
-                // 使用GraphicsUnit.Pixel确保字体大小准确
-                using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
-                    // 测量文本大小
-                    Size textSize = TextRenderer.MeasureText(g, "\uE706", iconFont);
+            
+            // 检查缓存
+            if (_iconCache.ContainsKey(iconSize)) {
+                return _iconCache[iconSize];
+            }
+            
+            // 创建图标
+            Icon icon = CreateIconForSize(iconSize);
+            _iconCache[iconSize] = icon;
+            return icon;
+        }
+        
+        private static Icon CreateIconForSize(int iconSize) {
+            // 字体大小根据图标尺寸调整
+            int fontSize = Math.Max(8, iconSize * 2 / 3);
+            
+            using (Bitmap bmp = new Bitmap(iconSize, iconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
+                using (Graphics g = Graphics.FromImage(bmp)) {
+                    g.SmoothingMode = SmoothingMode.HighQuality;
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    g.Clear(Color.Transparent);
                     
-                    // 计算居中位置，确保整数坐标避免模糊
-                    int x = (iconSize - textSize.Width) / 2;
-                    int y = (iconSize - textSize.Height) / 2;
-                    
-                    // 使用TextRenderer绘制，它在GDI+上更清晰地渲染文本
-                    TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White, 
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                    // 使用Segoe MDL2 Assets字体绘制亮度图标
+                    using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
+                        // 使用MeasureString获取更准确的尺寸
+                        SizeF textSize = g.MeasureString("\uE706", iconFont);
+                        
+                        float x = (iconSize - textSize.Width) / 2;
+                        float y = (iconSize - textSize.Height) / 2;
+                        
+                        // 使用DrawString而不是TextRenderer，在高DPI下更清晰
+                        using (Brush brush = new SolidBrush(Color.White)) {
+                            g.DrawString("\uE706", iconFont, brush, x, y);
+                        }
+                    }
                 }
                 
+                // 使用Icon.FromHandle创建图标
                 IntPtr hIcon = bmp.GetHicon();
-                Icon icon = Icon.FromHandle(hIcon);
-                return icon;
+                return Icon.FromHandle(hIcon);
             }
         }
 
@@ -577,27 +593,36 @@ namespace SimpleBrightness
             // 获取系统DPI缩放比例
             float dpiScale = GetSystemDpiScale();
             
-            // 根据DPI返回合适的图标尺寸
-            // Windows建议使用这些标准尺寸以确保清晰显示
-            if (dpiScale >= 2.0f) return 32;      // 200% 缩放
-            if (dpiScale >= 1.75f) return 28;     // 175% 缩放  
-            if (dpiScale >= 1.5f) return 24;      // 150% 缩放
-            if (dpiScale >= 1.25f) return 20;     // 125% 缩放
-            return 16;                            // 100% 缩放 (标准托盘图标大小)
+            // Windows托盘图标标准尺寸
+            // 使用SM_CXSMICON获取系统推荐的小图标尺寸
+            int systemIconSize = GetSystemMetrics(SM_CXSMICON);
+            if (systemIconSize > 0) {
+                return systemIconSize;
+            }
+            
+            // 备用：根据DPI计算
+            if (dpiScale >= 2.0f) return 32;
+            if (dpiScale >= 1.5f) return 24;
+            if (dpiScale >= 1.25f) return 20;
+            return 16;
         }
 
         private static float GetSystemDpiScale() {
             try {
                 using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) {
-                    float dpiX = g.DpiX;
-                    // 标准DPI是96，计算缩放比例
-                    return dpiX / 96.0f;
+                    return g.DpiX / 96.0f;
                 }
             }
             catch {
-                return 1.0f; // 默认100%
+                return 1.0f;
             }
         }
+        
+        // Windows API
+        private const int SM_CXSMICON = 49;
+        
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
     }
 
     // ================== Native Windows Style OSD (Multiple Monitors Support) ==================
@@ -1462,7 +1487,7 @@ namespace SimpleBrightness
                 ColumnCount = 1,
                 BackColor = ThemeManager.Background
             };
-            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 120)); // Top panel with controls
+            mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 130)); // Top panel with controls (increased from 120)
             mainTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));  // Graph
             mainTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));  // Bottom panel with description
             this.Controls.Add(mainTable);
@@ -1471,7 +1496,7 @@ namespace SimpleBrightness
             Panel topPanel = new Panel {
                 Dock = DockStyle.Fill,
                 BackColor = ThemeManager.Surface,
-                Padding = new Padding(20, 10, 20, 10)
+                Padding = new Padding(20, 15, 20, 10)  // Increased top padding from 10 to 15
             };
             mainTable.Controls.Add(topPanel, 0, 0);
             
@@ -1482,7 +1507,7 @@ namespace SimpleBrightness
                 ColumnCount = 3,
                 BackColor = ThemeManager.Surface
             };
-            topTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Title row
+            topTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // Title row (increased from 30)
             topTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 60)); // Controls row
             topTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));    // Checkboxes
             topTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // Spacer
@@ -1608,12 +1633,18 @@ namespace SimpleBrightness
             };
             bottomTable.Controls.Add(lblInfo, 0, 1);
             
-            // Key event handler
-            this.KeyDown += (s, e) => {
-                if (!_graph.Focused && !_graph.IsCapturingKey) {
-                    _graph.Focus();
+            // Key event handler - use PreviewKeyDown for better capture
+            this.PreviewKeyDown += (s, e) => {
+                // Handle arrow keys and Ctrl+Z
+                if (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down || 
+                    e.KeyCode == Keys.Left || e.KeyCode == Keys.Right ||
+                    (e.Control && e.KeyCode == Keys.Z)) {
+                    e.IsInputKey = true;
                 }
-                
+            };
+            
+            this.KeyDown += (s, e) => {
+                // Ctrl+Z for undo
                 if (e.Control && e.KeyCode == Keys.Z) {
                     _graph.Undo();
                     if (_graph.SelectedPoint.HasValue && _points.ContainsKey(_graph.SelectedPoint.Value)) {
@@ -1626,6 +1657,7 @@ namespace SimpleBrightness
                     return;
                 }
                 
+                // Arrow keys for adjusting selected point
                 if (_graph.SelectedPoint.HasValue) {
                     int x = _graph.SelectedPoint.Value;
                     if (!_points.ContainsKey(x)) return;
@@ -1757,7 +1789,7 @@ namespace SimpleBrightness
         private const int PointRadius = 6;
         private const int HitRadius = 12;
         private const int DragThreshold = 5; // Pixels to start dragging
-        private int _padding = 60;
+        private int _padding = 66; // Increased from 60 to fix Y-axis label overlap
         
         // Undo stack
         private Stack<Dictionary<int, int>> _undoStack = new Stack<Dictionary<int, int>>();
