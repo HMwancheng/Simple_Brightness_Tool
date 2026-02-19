@@ -189,85 +189,85 @@ namespace SimpleBrightness
     // ================== Dark Mode Scrollable Panel ==================
     public class DarkScrollPanel : Panel
     {
+        private bool _isDraggingThumb = false;
+        private Point _dragStartPos;
+        private int _dragStartValue;
+        private VScrollBar _customScrollBar;
+
         public DarkScrollPanel()
         {
-            this.AutoScroll = true;
             this.BackColor = ThemeManager.Background;
+            // Don't use AutoScroll, we'll implement custom scrolling
+            this.AutoScroll = false;
+            
+            // Create custom scrollbar
+            _customScrollBar = new VScrollBar
+            {
+                Dock = DockStyle.Right,
+                Visible = false,
+                Width = 12 // Slightly thinner than standard
+            };
+            _customScrollBar.ValueChanged += (s, e) => {
+                this.AutoScrollPosition = new Point(0, _customScrollBar.Value);
+            };
+            this.Controls.Add(_customScrollBar);
         }
 
-        protected override void WndProc(ref Message m)
+        protected override void OnControlAdded(ControlEventArgs e)
         {
-            // Intercept WM_NCPAINT to draw custom scrollbar
-            if (m.Msg == 0x85) // WM_NCPAINT
+            base.OnControlAdded(e);
+            if (e.Control != _customScrollBar)
             {
-                base.WndProc(ref m);
-                if (this.VerticalScroll.Visible)
-                {
-                    DrawCustomScrollBar();
-                }
-                return;
+                e.Control.LocationChanged += (s, ev) => UpdateScrollBar();
+                e.Control.SizeChanged += (s, ev) => UpdateScrollBar();
             }
-
-            base.WndProc(ref m);
         }
 
-        private void DrawCustomScrollBar()
+        protected override void OnSizeChanged(EventArgs e)
         {
-            if (!this.VerticalScroll.Visible) return;
+            base.OnSizeChanged(e);
+            UpdateScrollBar();
+        }
 
-            IntPtr hdc = GetWindowDC(this.Handle);
-            try
+        private void UpdateScrollBar()
+        {
+            // Calculate content height
+            int contentHeight = 0;
+            foreach (Control ctrl in this.Controls)
             {
-                using (Graphics g = Graphics.FromHdc(hdc))
+                if (ctrl != _customScrollBar && ctrl.Visible)
                 {
-                    // Scrollbar area is to the right of client area
-                    var scrollBarRect = new Rectangle(
-                        this.ClientRectangle.Width,
-                        0,
-                        SystemInformation.VerticalScrollBarWidth,
-                        this.ClientRectangle.Height
-                    );
-
-                    // Fill track with background color
-                    Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
-                    using (var brush = new SolidBrush(trackColor))
-                    {
-                        g.FillRectangle(brush, scrollBarRect);
-                    }
-
-                    // Calculate thumb position
-                    int contentHeight = Math.Max(1, this.VerticalScroll.Maximum - this.VerticalScroll.Minimum);
-                    int viewHeight = this.ClientRectangle.Height;
-                    int thumbHeight = Math.Max(30, (int)((float)viewHeight * viewHeight / contentHeight));
-                    int thumbY = (int)((float)this.VerticalScroll.Value / contentHeight * (viewHeight - thumbHeight));
-                    thumbY = Math.Max(0, Math.Min(thumbY, viewHeight - thumbHeight));
-
-                    var thumbRect = new Rectangle(
-                        scrollBarRect.X + 2,
-                        thumbY,
-                        scrollBarRect.Width - 4,
-                        thumbHeight
-                    );
-
-                    // Draw thumb
-                    Color thumbColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
-                    using (var brush = new SolidBrush(thumbColor))
-                    {
-                        g.FillRectangle(brush, thumbRect);
-                    }
+                    contentHeight = Math.Max(contentHeight, ctrl.Bottom);
                 }
             }
-            finally
+
+            bool needScrollBar = contentHeight > this.ClientSize.Height;
+            
+            if (needScrollBar)
             {
-                ReleaseDC(this.Handle, hdc);
+                _customScrollBar.Visible = true;
+                _customScrollBar.Maximum = contentHeight - this.ClientSize.Height + _customScrollBar.LargeChange - 1;
+                _customScrollBar.LargeChange = this.ClientSize.Height;
+                
+                // Style the scrollbar
+                _customScrollBar.BackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
+            }
+            else
+            {
+                _customScrollBar.Visible = false;
             }
         }
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetWindowDC(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (_customScrollBar.Visible)
+            {
+                int newValue = _customScrollBar.Value - e.Delta / 3;
+                newValue = Math.Max(0, Math.Min(newValue, _customScrollBar.Maximum - _customScrollBar.LargeChange + 1));
+                _customScrollBar.Value = newValue;
+            }
+        }
     }
     
     // ================== Windows 11 Style TrackBar (6px with Double Circle Thumb) ==================
@@ -576,8 +576,8 @@ namespace SimpleBrightness
         }
         
         private static Icon CreateIconForSize(int iconSize) {
-            // 字体大小根据图标尺寸调整
-            int fontSize = Math.Max(8, iconSize * 2 / 3);
+            // 字体大小根据图标尺寸调整 - 使用更大的字体比例
+            int fontSize = Math.Max(10, iconSize * 3 / 4);
             
             using (Bitmap bmp = new Bitmap(iconSize, iconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
                 using (Graphics g = Graphics.FromImage(bmp)) {
@@ -586,23 +586,27 @@ namespace SimpleBrightness
                     g.Clear(Color.Transparent);
                     
                     // 使用Segoe MDL2 Assets字体绘制亮度图标
+                    // 使用GraphicsUnit.Pixel确保字体大小准确
                     using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
                         // 使用MeasureString获取更准确的尺寸
                         SizeF textSize = g.MeasureString("\uE706", iconFont);
                         
+                        // 确保图标居中
                         float x = (iconSize - textSize.Width) / 2;
                         float y = (iconSize - textSize.Height) / 2;
                         
-                        // 使用DrawString而不是TextRenderer，在高DPI下更清晰
+                        // 使用DrawString绘制，在高DPI下更清晰
                         using (Brush brush = new SolidBrush(Color.White)) {
                             g.DrawString("\uE706", iconFont, brush, x, y);
                         }
                     }
                 }
                 
-                // 使用Icon.FromHandle创建图标
+                // 创建图标 - 使用Icon.FromHandle
                 IntPtr hIcon = bmp.GetHicon();
-                return Icon.FromHandle(hIcon);
+                Icon icon = Icon.FromHandle(hIcon);
+                // 克隆图标以避免句柄问题
+                return (Icon)icon.Clone();
             }
         }
 
