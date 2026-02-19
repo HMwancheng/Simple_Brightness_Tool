@@ -613,15 +613,17 @@ namespace SimpleBrightness
                     // 使用Segoe MDL2 Assets字体绘制亮度图标
                     // 使用GraphicsUnit.Pixel确保字体大小准确
                     using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
-                        // 使用TextRenderer.MeasureText获取更准确的尺寸
-                        Size textSize = TextRenderer.MeasureText("\uE706", iconFont);
+                        // 使用MeasureString获取更准确的尺寸
+                        SizeF textSize = g.MeasureString("\uE706", iconFont);
                         
-                        // 确保图标居中，稍微下移2px以视觉居中
-                        int x = (iconSize - textSize.Width) / 2;
-                        int y = (iconSize - textSize.Height) / 2 + 2;
+                        // 确保图标居中，下移1px使其视觉居中
+                        float x = (float)Math.Round((iconSize - textSize.Width) / 2);
+                        float y = (float)Math.Round((iconSize - textSize.Height) / 2) + 1;
                         
-                        // 使用TextRenderer绘制，在系统托盘更准确
-                        TextRenderer.DrawText(g, "\uE706", iconFont, new Point(x, y), Color.White);
+                        // 使用DrawString绘制，在高DPI下更清晰
+                        using (Brush brush = new SolidBrush(Color.White)) {
+                            g.DrawString("\uE706", iconFont, brush, x, y);
+                        }
                     }
                 }
                 
@@ -963,11 +965,14 @@ namespace SimpleBrightness
             };
             this.Controls.Add(scrollContainer);
             
-            Panel panel = new Panel { 
+            FlowLayoutPanel panel = new FlowLayoutPanel { 
+                FlowDirection = FlowDirection.TopDown, 
+                WrapContents = false, 
+                AutoSize = true, 
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                 Padding = new Padding(24), 
                 Width = 400,
-                BackColor = ThemeManager.Background,
-                AutoSize = false
+                BackColor = ThemeManager.Background
             };
             scrollContainer.Controls.Add(panel);
             

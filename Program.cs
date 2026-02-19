@@ -63,6 +63,9 @@ namespace SimpleBrightness
 
             contextMenu = new ContextMenuStrip();
             
+            // Apply dark mode styling to context menu
+            ApplyContextMenuDarkMode(contextMenu);
+            
             contextMenu.Items.Add("食用说明", null, (s, e) => new HelpForm().ShowDialog());
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
@@ -691,10 +694,10 @@ namespace SimpleBrightness
             foreach(var m in monitors) form.UpdateSlider(m.UniqueId, m.LastBrightness);
         }
 
-        private void ShowSettings() 
-        { 
-            var form = new SettingsForm(config); 
-            form.FormClosed += (s, e) => 
+        private void ShowSettings()
+        {
+            var form = new SettingsForm(config);
+            form.FormClosed += (s, e) =>
             {
                 if (form.HotkeysChanged)
                 {
@@ -702,7 +705,58 @@ namespace SimpleBrightness
                     ReloadHotkeys();
                 }
             };
-            form.Show(); 
+            form.Show();
+        }
+
+        private void ApplyContextMenuDarkMode(ContextMenuStrip menu)
+        {
+            // Check if dark mode is enabled
+            bool isDarkMode = ThemeManager.IsDarkMode;
+
+            // Set menu background and text colors
+            menu.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+            menu.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
+
+            // Handle menu opening to style items
+            menu.Opening += (s, e) =>
+            {
+                foreach (ToolStripItem item in menu.Items)
+                {
+                    ApplyMenuItemStyle(item, isDarkMode);
+                }
+            };
+        }
+
+        private void ApplyMenuItemStyle(ToolStripItem item, bool isDarkMode)
+        {
+            if (item is ToolStripMenuItem menuItem)
+            {
+                menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+                menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
+
+                // Handle hover/selection colors
+                menuItem.MouseEnter += (s, e) =>
+                {
+                    menuItem.BackColor = isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
+                    menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.HighlightText;
+                };
+
+                menuItem.MouseLeave += (s, e) =>
+                {
+                    menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
+                    menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
+                };
+
+                // Style separator
+                if (menuItem is ToolStripSeparator)
+                {
+                    // Separators don't need special styling
+                }
+            }
+            else if (item is ToolStripSeparator separator)
+            {
+                // Separator styling if needed
+            }
         }
 
         // 配置迁移：将旧版ID格式的配置迁移到新版
