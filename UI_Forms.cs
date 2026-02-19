@@ -194,6 +194,80 @@ namespace SimpleBrightness
             this.AutoScroll = true;
             this.BackColor = ThemeManager.Background;
         }
+
+        protected override void WndProc(ref Message m)
+        {
+            // Intercept WM_NCPAINT to draw custom scrollbar
+            if (m.Msg == 0x85) // WM_NCPAINT
+            {
+                base.WndProc(ref m);
+                if (this.VerticalScroll.Visible)
+                {
+                    DrawCustomScrollBar();
+                }
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+
+        private void DrawCustomScrollBar()
+        {
+            if (!this.VerticalScroll.Visible) return;
+
+            IntPtr hdc = GetWindowDC(this.Handle);
+            try
+            {
+                using (Graphics g = Graphics.FromHdc(hdc))
+                {
+                    // Scrollbar area is to the right of client area
+                    var scrollBarRect = new Rectangle(
+                        this.ClientRectangle.Width,
+                        0,
+                        SystemInformation.VerticalScrollBarWidth,
+                        this.ClientRectangle.Height
+                    );
+
+                    // Fill track with background color
+                    Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
+                    using (var brush = new SolidBrush(trackColor))
+                    {
+                        g.FillRectangle(brush, scrollBarRect);
+                    }
+
+                    // Calculate thumb position
+                    int contentHeight = Math.Max(1, this.VerticalScroll.Maximum - this.VerticalScroll.Minimum);
+                    int viewHeight = this.ClientRectangle.Height;
+                    int thumbHeight = Math.Max(30, (int)((float)viewHeight * viewHeight / contentHeight));
+                    int thumbY = (int)((float)this.VerticalScroll.Value / contentHeight * (viewHeight - thumbHeight));
+                    thumbY = Math.Max(0, Math.Min(thumbY, viewHeight - thumbHeight));
+
+                    var thumbRect = new Rectangle(
+                        scrollBarRect.X + 2,
+                        thumbY,
+                        scrollBarRect.Width - 4,
+                        thumbHeight
+                    );
+
+                    // Draw thumb
+                    Color thumbColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
+                    using (var brush = new SolidBrush(thumbColor))
+                    {
+                        g.FillRectangle(brush, thumbRect);
+                    }
+                }
+            }
+            finally
+            {
+                ReleaseDC(this.Handle, hdc);
+            }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindowDC(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
     }
     
     // ================== Windows 11 Style TrackBar (6px with Double Circle Thumb) ==================
@@ -540,12 +614,11 @@ namespace SimpleBrightness
             // 使用SM_CXSMICON获取系统推荐的小图标尺寸
             int systemIconSize = GetSystemMetrics(SM_CXSMICON);
             if (systemIconSize > 0) {
-                // 强制使用更大的尺寸以确保清晰可见
-                // 无论系统推荐什么尺寸，都使用32x32
-                return 32;
+                // 使用系统推荐的尺寸
+                return systemIconSize;
             }
             
-            // 备用：根据DPI计算，使用更大的尺寸
+            // 备用：根据DPI计算
             if (dpiScale >= 2.0f) return 32;
             if (dpiScale >= 1.5f) return 24;
             if (dpiScale >= 1.25f) return 20;
@@ -1569,7 +1642,7 @@ namespace SimpleBrightness
             
             // Help text
             Label lblInfo = new Label {
-                Text = "🖱️ 点击选中/添加 | 拖拽移动 | ↑↓调整输出 | ←→调整输入 | Ctrl+Z撤销 | 右键删除",
+                Text = "🖱️ 点击选中/添加 | 拖拽移动 | Ctrl+↑↓调整输出 | Ctrl+←→调整输入 | Ctrl+Z撤销 | 右键删除",
                 AutoSize = true,
                 ForeColor = ThemeManager.Accent,
                 Font = new Font("Segoe UI", 9),
