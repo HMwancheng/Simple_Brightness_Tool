@@ -189,92 +189,11 @@ namespace SimpleBrightness
     // ================== Dark Mode Scrollable Panel ==================
     public class DarkScrollPanel : Panel
     {
-        private bool _isDraggingThumb = false;
-        private Point _dragStartPos;
-        private int _dragStartValue;
-        
         public DarkScrollPanel()
         {
             this.AutoScroll = true;
             this.BackColor = ThemeManager.Background;
-            // Don't use UserPaint to allow normal child control rendering
-            this.SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
         }
-        
-        protected override void WndProc(ref Message m)
-        {
-            // Intercept scrollbar painting messages
-            if (m.Msg == 0x85 || m.Msg == 0x14 || m.Msg == 0x47) // WM_NCPAINT, WM_ERASEBKGND, WM_WINDOWPOSCHANGED
-            {
-                base.WndProc(ref m);
-                if (this.VerticalScroll.Visible)
-                {
-                    DrawCustomScrollBar();
-                }
-                return;
-            }
-            
-            base.WndProc(ref m);
-        }
-        
-        private void DrawCustomScrollBar()
-        {
-            if (!this.VerticalScroll.Visible) return;
-            
-            IntPtr hdc = GetWindowDC(this.Handle);
-            try
-            {
-                using (Graphics g = Graphics.FromHdc(hdc))
-                {
-                    var scrollBarRect = new Rectangle(
-                        this.ClientRectangle.Width,
-                        0,
-                        SystemInformation.VerticalScrollBarWidth,
-                        this.ClientRectangle.Height
-                    );
-                    
-                    // Scrollbar track - use theme background color
-                    Color trackColor = ThemeManager.IsDarkMode ? Color.FromArgb(45, 45, 45) : Color.FromArgb(230, 230, 230);
-                    using (var trackBrush = new SolidBrush(trackColor))
-                    {
-                        g.FillRectangle(trackBrush, scrollBarRect);
-                    }
-                    
-                    // Calculate thumb position and size
-                    int contentHeight = this.VerticalScroll.Maximum - this.VerticalScroll.Minimum;
-                    int viewHeight = this.ClientRectangle.Height;
-                    int thumbHeight = Math.Max(30, (int)((float)viewHeight / contentHeight * viewHeight));
-                    int thumbY = (int)((float)this.VerticalScroll.Value / contentHeight * (viewHeight - thumbHeight));
-                    
-                    // Ensure thumb stays within bounds
-                    thumbY = Math.Max(0, Math.Min(thumbY, viewHeight - thumbHeight));
-                    
-                    var thumbRect = new Rectangle(
-                        scrollBarRect.X + 2,
-                        thumbY,
-                        scrollBarRect.Width - 4,
-                        thumbHeight
-                    );
-                    
-                    // Scrollbar thumb
-                    Color thumbColor = ThemeManager.IsDarkMode ? Color.FromArgb(100, 100, 100) : Color.FromArgb(150, 150, 150);
-                    using (var thumbBrush = new SolidBrush(thumbColor))
-                    {
-                        g.FillRectangle(thumbBrush, thumbRect);
-                    }
-                }
-            }
-            finally
-            {
-                ReleaseDC(this.Handle, hdc);
-            }
-        }
-        
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetWindowDC(IntPtr hWnd);
-        
-        [DllImport("user32.dll")]
-        private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
     }
     
     // ================== Windows 11 Style TrackBar (6px with Double Circle Thumb) ==================
@@ -621,11 +540,9 @@ namespace SimpleBrightness
             // 使用SM_CXSMICON获取系统推荐的小图标尺寸
             int systemIconSize = GetSystemMetrics(SM_CXSMICON);
             if (systemIconSize > 0) {
-                // 使用系统推荐的尺寸，但放大一级以确保清晰可见
-                if (systemIconSize >= 32) return 32;
-                if (systemIconSize >= 24) return 24;
-                if (systemIconSize >= 20) return 20;
-                return 16;
+                // 强制使用更大的尺寸以确保清晰可见
+                // 无论系统推荐什么尺寸，都使用32x32
+                return 32;
             }
             
             // 备用：根据DPI计算，使用更大的尺寸
@@ -1652,7 +1569,7 @@ namespace SimpleBrightness
             
             // Help text
             Label lblInfo = new Label {
-                Text = "🖱️ 点击选中/添加 | 再次拖拽移动 | 方向键微调(↑↓输出 ←→输入) | Ctrl+Z撤销 | 右键删除",
+                Text = "🖱️ 点击选中/添加 | 拖拽移动 | ↑↓调整输出 | ←→调整输入 | Ctrl+Z撤销 | 右键删除",
                 AutoSize = true,
                 ForeColor = ThemeManager.Accent,
                 Font = new Font("Segoe UI", 9),
@@ -1693,15 +1610,27 @@ namespace SimpleBrightness
                     switch (e.KeyCode) {
                         case Keys.Up:
                             if (!isFixed || _showMinMaxUnlock) {
+                                _graph.SaveStateForUndo();
                                 y = Math.Min(100, y + 1);
-                                modified = true;
+                                _points[x] = y;
+                                lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
+                                _graph.Invalidate();
+                                if (_graph.EnablePreview) {
+                                    _graph.ApplyPreview(x, y);
+                                }
                             }
                             e.Handled = true;
                             break;
                         case Keys.Down:
                             if (!isFixed || _showMinMaxUnlock) {
+                                _graph.SaveStateForUndo();
                                 y = Math.Max(0, y - 1);
-                                modified = true;
+                                _points[x] = y;
+                                lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
+                                _graph.Invalidate();
+                                if (_graph.EnablePreview) {
+                                    _graph.ApplyPreview(x, y);
+                                }
                             }
                             e.Handled = true;
                             break;
@@ -1733,15 +1662,6 @@ namespace SimpleBrightness
                             }
                             e.Handled = true;
                             break;
-                    }
-                    
-                    if (modified) {
-                        _points[x] = y;
-                        lblSelectedValue.Text = $"输入{x}% → 输出{y}%";
-                        _graph.Invalidate();
-                        if (_graph.EnablePreview) {
-                            _graph.ApplyPreview(x, y);
-                        }
                     }
                 }
             };
@@ -1810,8 +1730,9 @@ namespace SimpleBrightness
         private int? _hoveredPoint = null;
         private int? _selectedPoint = null;
         private bool _isDragging = false;
-        private bool _hasClickedOnce = false; // Track if point was clicked once
         private Point _dragStartPos;
+        private int _lastDragX = 0; // Store last drag position for preview
+        private int _lastDragY = 0;
         private const int PointRadius = 6;
         private const int HitRadius = 12;
         private const int DragThreshold = 5; // Pixels to start dragging
@@ -2039,10 +1960,9 @@ namespace SimpleBrightness
                     int newX = Math.Max(0, Math.Min(100, (e.X - left) * 100 / width));
                     int newY = Math.Max(0, Math.Min(100, (bottom - e.Y) * 100 / height));
                     
-                    // Apply preview if enabled
-                    if (EnablePreview) {
-                        ApplyPreview(newX, newY);
-                    }
+                    // Store last position for preview on mouse up
+                    _lastDragX = newX;
+                    _lastDragY = newY;
                     
                     // Remove old point and add new one
                     int oldX = _selectedPoint.Value;
@@ -2077,9 +1997,14 @@ namespace SimpleBrightness
         protected override void OnMouseUp(MouseEventArgs e) {
             base.OnMouseUp(e);
             
-            // If we were dragging, save state for undo
-            if (_isDragging && _hasClickedOnce) {
+            // If we were dragging, save state for undo and apply preview
+            if (_isDragging) {
                 SaveStateForUndo();
+                
+                // Apply preview on mouse up if enabled
+                if (EnablePreview) {
+                    ApplyPreview(_lastDragX, _lastDragY);
+                }
             }
             
             _isDragging = false;
