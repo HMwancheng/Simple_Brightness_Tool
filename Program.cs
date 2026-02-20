@@ -71,10 +71,16 @@ namespace SimpleBrightness
             
             // 同步多屏亮度菜单项，带提示说明
             var syncItem = new ToolStripMenuItem("同步多屏亮度", null, (s, e) => SyncAllMonitorsBrightness());
-            syncItem.ToolTipText = "一键同步所有显示器的亮度（与点击托盘图标中键效果相同）";
+            syncItem.ToolTipText = "一键同步所有显示器的亮度 (快捷：中键单击托盘图标)";
             contextMenu.Items.Add(syncItem);
             
             contextMenu.Items.Add(new ToolStripSeparator());
+            
+            // 检查更新菜单项
+            var updateItem = new ToolStripMenuItem("检查更新", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool/releases/latest"));
+            updateItem.ToolTipText = "查看最新版本发布页";
+            contextMenu.Items.Add(updateItem);
+            
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
             
