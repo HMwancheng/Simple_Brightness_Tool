@@ -651,13 +651,15 @@ namespace SimpleBrightness
             float dpiScale = GetSystemDpiScale();
             int systemIconSize = GetSystemMetrics(SM_CXSMICON);
             if (systemIconSize > 0) {
-                return systemIconSize;
+                // 增加到系统推荐尺寸的 4/3
+                return (int)(systemIconSize * 4 / 3);
             }
             
-            if (dpiScale >= 2.0f) return 32;
-            if (dpiScale >= 1.5f) return 24;
-            if (dpiScale >= 1.25f) return 20;
-            return 16;
+            // 根据 DPI 计算，增加到 4/3
+            if (dpiScale >= 2.0f) return 32 * 4 / 3;  // ~42
+            if (dpiScale >= 1.5f) return 24 * 4 / 3;  // 32
+            if (dpiScale >= 1.25f) return 20 * 4 / 3; // ~26
+            return 16 * 4 / 3;  // ~21
         }
 
         private static float GetSystemDpiScale() {
