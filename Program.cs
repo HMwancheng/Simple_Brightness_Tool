@@ -75,7 +75,10 @@ namespace SimpleBrightness
             
             var debugItem = new ToolStripMenuItem("🛠 调试模式 (忽略曲线)", null, (s, e) => {
                 _isDebugMode = !_isDebugMode;
-                ((ToolStripMenuItem)s).Checked = _isDebugMode;
+                if (s is ToolStripMenuItem menuItem)
+                {
+                    menuItem.Checked = _isDebugMode;
+                }
                 // 切换调试模式后刷新一下，确保数值逻辑一致
                 ReloadMonitorsSafe();
             });
