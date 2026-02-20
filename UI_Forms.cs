@@ -585,13 +585,15 @@ namespace SimpleBrightness
                 return _iconCache[iconName];
             }
             
-            // 从嵌入资源加载图标
+            // 从嵌入资源加载图标，使用指定尺寸
             string resourceName = $"SimpleBrightness.app.ico.{iconName}";
             try {
                 var assembly = System.Reflection.Assembly.GetExecutingAssembly();
                 using (Stream? stream = assembly.GetManifestResourceStream(resourceName)) {
                     if (stream != null) {
-                        Icon icon = new Icon(stream);
+                        // 加载 ICO 并使用指定尺寸
+                        int desiredSize = GetTrayIconSize();
+                        Icon icon = new Icon(stream, desiredSize, desiredSize);
                         _iconCache[iconName] = icon;
                         return icon;
                     }
