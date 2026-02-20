@@ -735,8 +735,8 @@ namespace SimpleBrightness
 
         private void ShowMainWindow()
         {
-            // 显示主界面（亮度调节OSD）
-            ShowUnifiedOsd();
+            // 显示主界面（亮度调节窗口）
+            ShowBrightnessWindow();
         }
 
         private void SyncAllMonitorsBrightness()
