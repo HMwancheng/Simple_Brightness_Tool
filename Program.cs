@@ -747,12 +747,12 @@ namespace SimpleBrightness
                 if (monitors.Count == 0) return;
                 
                 // 获取第一个显示器的亮度作为参考
-                int referenceBrightness = monitors[0].CurrentBrightness;
+                int referenceBrightness = monitors[0].LastBrightness;
                 
                 // 应用到所有其他显示器
                 foreach (var monitor in monitors.Skip(1))
                 {
-                    monitor.SetBrightness(referenceBrightness);
+                    ApplyBrightness(monitor, referenceBrightness, false);
                 }
                 
                 // 显示OSD提示
