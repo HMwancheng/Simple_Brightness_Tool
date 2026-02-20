@@ -66,7 +66,15 @@ namespace SimpleBrightness
             // Apply dark mode styling to context menu
             ApplyContextMenuDarkMode(contextMenu);
             
-            contextMenu.Items.Add("食用说明", null, (s, e) => new HelpForm().ShowDialog());
+            contextMenu.Items.Add("打开主界面", null, (s, e) => ShowMainWindow());
+            contextMenu.Items.Add(new ToolStripSeparator());
+            
+            // 同步多屏亮度菜单项，带提示说明
+            var syncItem = new ToolStripMenuItem("同步多屏亮度", null, (s, e) => SyncAllMonitorsBrightness());
+            syncItem.ToolTipText = "一键同步所有显示器的亮度（与点击托盘图标中键效果相同）";
+            contextMenu.Items.Add(syncItem);
+            
+            contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
             
@@ -723,6 +731,37 @@ namespace SimpleBrightness
                 }
             };
             form.Show();
+        }
+
+        private void ShowMainWindow()
+        {
+            // 显示主界面（亮度调节OSD）
+            ShowUnifiedOsd();
+        }
+
+        private void SyncAllMonitorsBrightness()
+        {
+            // 同步所有显示器的亮度（与中键点击托盘图标效果相同）
+            try
+            {
+                if (monitors.Count == 0) return;
+                
+                // 获取第一个显示器的亮度作为参考
+                int referenceBrightness = monitors[0].CurrentBrightness;
+                
+                // 应用到所有其他显示器
+                foreach (var monitor in monitors.Skip(1))
+                {
+                    monitor.SetBrightness(referenceBrightness);
+                }
+                
+                // 显示OSD提示
+                ShowUnifiedOsd();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"同步亮度失败: {ex.Message}");
+            }
         }
 
         private void ApplyContextMenuDarkMode(ContextMenuStrip menu)
