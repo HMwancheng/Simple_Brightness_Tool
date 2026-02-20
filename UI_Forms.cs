@@ -587,18 +587,27 @@ namespace SimpleBrightness
             
             // 从文件加载图标
             string iconPath = Path.Combine(Application.StartupPath, "app.ico", iconName);
+            
+            // DEBUG: 输出路径信息到控制台
+            Console.WriteLine($"[IconDebug] Looking for icon: {iconPath}");
+            Console.WriteLine($"[IconDebug] StartupPath: {Application.StartupPath}");
+            Console.WriteLine($"[IconDebug] File exists: {File.Exists(iconPath)}");
+            
             if (File.Exists(iconPath)) {
                 try {
                     Icon icon = new Icon(iconPath);
                     _iconCache[iconName] = icon;
+                    Console.WriteLine($"[IconDebug] Icon loaded successfully");
                     return icon;
                 }
-                catch {
+                catch (Exception ex) {
                     // 加载失败时返回默认图标
+                    Console.WriteLine($"[IconDebug] Failed to load icon: {ex.Message}");
                 }
             }
             
             // 如果文件不存在或加载失败，使用程序生成的图标作为后备
+            Console.WriteLine($"[IconDebug] Using fallback icon");
             return DrawNativeIconFallback();
         }
         
