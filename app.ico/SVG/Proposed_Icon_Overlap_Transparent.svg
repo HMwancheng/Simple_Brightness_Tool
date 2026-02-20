@@ -1,29 +1,31 @@
 <svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Sun Center -->
-  <circle cx="128" cy="128" r="45" fill="url(#sun_gradient)"/>
-  
-  <!-- Rays -->
-  <g stroke-linecap="round" stroke-width="14" stroke="url(#sun_gradient)">
-    <line x1="128" y1="40" x2="128" y2="65"/>
-    <line x1="128" y1="191" x2="128" y2="216"/>
-    <line x1="40" y1="128" x2="65" y2="128"/>
-    <line x1="191" y1="128" x2="216" y2="128"/>
+  <g transform="translate(128, 128) scale(1.347) translate(-128, -128)">
+    <!-- Sun Center -->
+    <circle cx="128" cy="128" r="45" fill="url(#sun_gradient)"/>
     
-    <line x1="66" y1="66" x2="84" y2="84"/>
-    <line x1="172" y1="172" x2="190" y2="190"/>
-    <line x1="190" y1="66" x2="172" y2="84"/>
-    <line x1="84" y1="172" x2="66" y2="190"/>
+    <!-- Rays -->
+    <g stroke-linecap="round" stroke-width="14" stroke="url(#sun_gradient)">
+      <line x1="128" y1="40" x2="128" y2="65"/>
+      <line x1="128" y1="191" x2="128" y2="216"/>
+      <line x1="40" y1="128" x2="65" y2="128"/>
+      <line x1="191" y1="128" x2="216" y2="128"/>
+      
+      <line x1="66" y1="66" x2="84" y2="84"/>
+      <line x1="172" y1="172" x2="190" y2="190"/>
+      <line x1="190" y1="66" x2="172" y2="84"/>
+      <line x1="84" y1="172" x2="66" y2="190"/>
+    </g>
+
+    <!-- Brightness Curve (Adjusted for perfect balance, Transparent version) -->
+    <path d="M146 195C170 195 190 155 214 155" stroke="#00BCFF" stroke-width="12" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="146" cy="195" r="6" fill="#00BCFF" opacity="0.8"/>
+    <circle cx="214" cy="155" r="6" fill="#00BCFF" opacity="0.8"/>
+
+    <defs>
+      <linearGradient id="sun_gradient" x1="128" y1="40" x2="128" y2="216" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#FFD600"/>
+        <stop offset="100%" stop-color="#FF8A00"/>
+      </linearGradient>
+    </defs>
   </g>
-
-  <!-- Brightness Curve (Adjusted for perfect balance, Transparent version) -->
-  <path d="M146 195C170 195 190 155 214 155" stroke="#00BCFF" stroke-width="12" stroke-linecap="round" opacity="0.8"/>
-  <circle cx="146" cy="195" r="6" fill="#00BCFF" opacity="0.8"/>
-  <circle cx="214" cy="155" r="6" fill="#00BCFF" opacity="0.8"/>
-
-  <defs>
-    <linearGradient id="sun_gradient" x1="128" y1="40" x2="128" y2="216" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#FFD600"/>
-      <stop offset="100%" stop-color="#FF8A00"/>
-    </linearGradient>
-  </defs>
 </svg>
