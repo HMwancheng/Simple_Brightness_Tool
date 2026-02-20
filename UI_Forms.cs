@@ -955,6 +955,8 @@ namespace SimpleBrightness
         public bool HotkeysChanged { get; private set; } = false;
         public string NewHotkeyIncrease { get; private set; } = "";
         public string NewHotkeyDecrease { get; private set; } = "";
+        public bool TrayIconChanged { get; private set; } = false;
+        public string NewTrayIconStyle { get; private set; } = "";
         
         public SettingsForm(AppConfig config) { 
             this.Text = "设置"; 
@@ -1230,6 +1232,10 @@ namespace SimpleBrightness
                     2 => "Transparent",
                     _ => "Hybrid"
                 };
+                if (newTrayIconStyle != config.TrayIconStyle) {
+                    this.TrayIconChanged = true;
+                    this.NewTrayIconStyle = newTrayIconStyle;
+                }
                 config.TrayIconStyle = newTrayIconStyle;
                 SetAutoStart(chkAuto.Checked); 
                 this.Close(); 

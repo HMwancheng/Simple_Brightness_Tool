@@ -696,6 +696,7 @@ namespace SimpleBrightness
 
         private void ShowSettings()
         {
+            string oldTrayIconStyle = config.TrayIconStyle;
             var form = new SettingsForm(config);
             form.FormClosed += (s, e) =>
             {
@@ -703,6 +704,11 @@ namespace SimpleBrightness
                 {
                     // Reload hotkeys if changed
                     ReloadHotkeys();
+                }
+                // Update tray icon if changed
+                if (form.TrayIconChanged && trayIcon != null)
+                {
+                    trayIcon.Icon = IconDrawer.LoadTrayIcon(config.TrayIconStyle);
                 }
             };
             form.Show();
