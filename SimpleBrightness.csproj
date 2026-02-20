@@ -13,8 +13,8 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- 软件名称 -->
     <AssemblyName>HM's Simple Brightness Tool</AssemblyName>
-    <!-- 图标文件 (请上传 app.ico 到仓库根目录，否则使用默认图标) -->
-    <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- 应用程序图标 -->
+    <ApplicationIcon>app.ico\Icon_App.ico</ApplicationIcon>
   </PropertyGroup>
   
   <ItemGroup>

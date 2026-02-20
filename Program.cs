@@ -93,7 +93,7 @@ namespace SimpleBrightness
 
             trayIcon = new NotifyIcon()
             {
-                Icon = IconDrawer.DrawNativeIcon(), 
+                Icon = IconDrawer.LoadTrayIcon(config.TrayIconStyle), 
                 ContextMenuStrip = contextMenu,
                 Visible = true,
                 Text = "HM's Simple Brightness Tool"
@@ -1071,6 +1071,7 @@ namespace SimpleBrightness
         public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
         public string HotkeyIncrease { get; set; } = "Ctrl+F5";  // Default hotkey for brightness increase
         public string HotkeyDecrease { get; set; } = "Ctrl+F6";  // Default hotkey for brightness decrease
+        public string TrayIconStyle { get; set; } = "Hybrid";  // Hybrid, Minimalist, Transparent
         public List<string> HiddenMonitors { get; set; } = new List<string>(); 
         public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); 
         public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 

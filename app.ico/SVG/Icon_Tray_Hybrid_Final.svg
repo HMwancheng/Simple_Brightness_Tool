@@ -1,0 +1,24 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Hollow Sun Center (Thicker lines) -->
+  <circle cx="128" cy="128" r="45" stroke="white" stroke-width="18"/>
+  
+  <!-- Rays (Thicker lines) -->
+  <g stroke-linecap="round" stroke-width="18" stroke="white">
+    <line x1="128" y1="35" x2="128" y2="60"/>
+    <line x1="128" y1="196" x2="128" y2="221"/>
+    <line x1="35" y1="128" x2="60" y2="128"/>
+    <line x1="196" y1="128" x2="221" y2="128"/>
+    
+    <line x1="62" y1="62" x2="80" y2="80"/>
+    <line x1="176" y1="176" x2="194" y2="194"/>
+    <line x1="190" y1="62" x2="172" y2="80"/>
+    <line x1="84" y1="176" x2="66" y2="194"/>
+  </g>
+
+  <!-- Thicker Curve Style -->
+  <path d="M146 195C170 195 190 155 214 155" stroke="#00BCFF" stroke-width="16" stroke-linecap="round" stroke-opacity="0.7"/>
+  
+  <!-- Enlarged Curve Terminals (Nodes) -->
+  <circle cx="146" cy="195" r="8" fill="#00BCFF" fill-opacity="0.7"/>
+  <circle cx="214" cy="155" r="8" fill="#00BCFF" fill-opacity="0.7"/>
+</svg>

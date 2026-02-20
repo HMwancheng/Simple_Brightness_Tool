@@ -566,32 +566,56 @@ namespace SimpleBrightness
     
     // ================== Icon ==================
     public static class IconDrawer {
-        // 缓存不同尺寸的图标
-        private static Dictionary<int, Icon> _iconCache = new Dictionary<int, Icon>();
-        private static int _lastDpi = 0;
+        // 缓存图标
+        private static Dictionary<string, Icon> _iconCache = new Dictionary<string, Icon>();
         
-        public static Icon DrawNativeIcon() {
-            // 获取当前DPI
-            int currentDpi = (int)(GetSystemDpiScale() * 96);
-            
-            // 如果DPI变化，清除缓存
-            if (_lastDpi != 0 && _lastDpi != currentDpi) {
-                ClearCache();
-            }
-            _lastDpi = currentDpi;
-            
-            // 获取当前DPI缩放下的图标尺寸
-            int iconSize = GetTrayIconSize();
+        /// <summary>
+        /// 从ICO文件加载任务栏图标
+        /// </summary>
+        /// <param name="style">图标样式: Hybrid, Minimalist, Transparent</param>
+        public static Icon LoadTrayIcon(string style) {
+            string iconName = style switch {
+                "Minimalist" => "Icon_Tray_Minimalist.ico",
+                "Transparent" => "Icon_Tray_Transparent.ico",
+                _ => "Icon_Tray_Hybrid.ico"  // 默认 Hybrid
+            };
             
             // 检查缓存
-            if (_iconCache.ContainsKey(iconSize)) {
-                return _iconCache[iconSize];
+            if (_iconCache.ContainsKey(iconName)) {
+                return _iconCache[iconName];
             }
             
-            // 创建图标
-            Icon icon = CreateIconForSize(iconSize);
-            _iconCache[iconSize] = icon;
-            return icon;
+            // 从文件加载图标
+            string iconPath = Path.Combine(Application.StartupPath, "app.ico", iconName);
+            if (File.Exists(iconPath)) {
+                try {
+                    Icon icon = new Icon(iconPath);
+                    _iconCache[iconName] = icon;
+                    return icon;
+                }
+                catch {
+                    // 加载失败时返回默认图标
+                }
+            }
+            
+            // 如果文件不存在或加载失败，使用程序生成的图标作为后备
+            return DrawNativeIconFallback();
+        }
+        
+        /// <summary>
+        /// 加载应用程序图标
+        /// </summary>
+        public static Icon LoadAppIcon() {
+            string iconPath = Path.Combine(Application.StartupPath, "app.ico", "Icon_App.ico");
+            if (File.Exists(iconPath)) {
+                try {
+                    return new Icon(iconPath);
+                }
+                catch {
+                    // 加载失败时返回默认图标
+                }
+            }
+            return DrawNativeIconFallback();
         }
         
         public static void ClearCache() {
@@ -601,8 +625,9 @@ namespace SimpleBrightness
             _iconCache.Clear();
         }
         
-        private static Icon CreateIconForSize(int iconSize) {
-            // 字体大小根据图标尺寸调整 - 使用更大的字体比例
+        // 后备图标生成（当ICO文件不存在时使用）
+        private static Icon DrawNativeIconFallback() {
+            int iconSize = GetTrayIconSize();
             int fontSize = Math.Max(12, iconSize);
             
             using (Bitmap bmp = new Bitmap(iconSize, iconSize, System.Drawing.Imaging.PixelFormat.Format32bppArgb)) {
@@ -611,44 +636,30 @@ namespace SimpleBrightness
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
                     g.Clear(Color.Transparent);
                     
-                    // 使用Segoe MDL2 Assets字体绘制亮度图标
-                    // 使用GraphicsUnit.Pixel确保字体大小准确
                     using (Font iconFont = new Font("Segoe MDL2 Assets", fontSize, GraphicsUnit.Pixel)) {
-                        // 使用MeasureString获取更准确的尺寸
                         SizeF textSize = g.MeasureString("\uE706", iconFont);
-                        
-                        // 确保图标居中，下移1px使其视觉居中
                         float x = (float)Math.Round((iconSize - textSize.Width) / 2);
                         float y = (float)Math.Round((iconSize - textSize.Height) / 2) + 2;
                         
-                        // 使用DrawString绘制，在高DPI下更清晰
                         using (Brush brush = new SolidBrush(Color.White)) {
                             g.DrawString("\uE706", iconFont, brush, x, y);
                         }
                     }
                 }
                 
-                // 创建图标 - 使用Icon.FromHandle
                 IntPtr hIcon = bmp.GetHicon();
                 Icon icon = Icon.FromHandle(hIcon);
-                // 克隆图标以避免句柄问题
                 return (Icon)icon.Clone();
             }
         }
 
         private static int GetTrayIconSize() {
-            // 获取系统DPI缩放比例
             float dpiScale = GetSystemDpiScale();
-            
-            // Windows托盘图标标准尺寸
-            // 使用SM_CXSMICON获取系统推荐的小图标尺寸
             int systemIconSize = GetSystemMetrics(SM_CXSMICON);
             if (systemIconSize > 0) {
-                // 使用系统推荐的尺寸
                 return systemIconSize;
             }
             
-            // 备用：根据DPI计算
             if (dpiScale >= 2.0f) return 32;
             if (dpiScale >= 1.5f) return 24;
             if (dpiScale >= 1.25f) return 20;
@@ -666,7 +677,6 @@ namespace SimpleBrightness
             }
         }
         
-        // Windows API
         private const int SM_CXSMICON = 49;
         
         [DllImport("user32.dll")]
@@ -1088,6 +1098,34 @@ namespace SimpleBrightness
             cmbPower.SelectedIndex = config.UseSoftwarePower ? 1 : 0;
             panel.Controls.Add(cmbPower);
 
+            // Tray Icon Style Selection
+            Label lblTrayIcon = new Label { 
+                Text = "任务栏图标样式:", 
+                AutoSize = true, 
+                Font = new Font("Segoe UI Variable Text", 10),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 5)
+            };
+            panel.Controls.Add(lblTrayIcon);
+            
+            ComboBox cmbTrayIcon = new ComboBox { 
+                Width = 320, 
+                DropDownStyle = ComboBoxStyle.DropDownList, 
+                Margin = new Padding(0, 5, 0, 20),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                FlatStyle = FlatStyle.Flat
+            };
+            cmbTrayIcon.Items.Add("Hybrid (默认)");
+            cmbTrayIcon.Items.Add("Minimalist (简约)");
+            cmbTrayIcon.Items.Add("Transparent (透明)");
+            cmbTrayIcon.SelectedIndex = config.TrayIconStyle switch {
+                "Minimalist" => 1,
+                "Transparent" => 2,
+                _ => 0
+            };
+            panel.Controls.Add(cmbTrayIcon);
+
             // Hotkey Configuration
             Label lblHotkeyTitle = new Label { 
                 Text = "快捷键设置:", 
@@ -1186,6 +1224,13 @@ namespace SimpleBrightness
                 };
                 // Apply theme mode immediately
                 ThemeManager.ThemeMode = config.ThemeMode;
+                // Save tray icon style
+                string newTrayIconStyle = cmbTrayIcon.SelectedIndex switch {
+                    1 => "Minimalist",
+                    2 => "Transparent",
+                    _ => "Hybrid"
+                };
+                config.TrayIconStyle = newTrayIconStyle;
                 SetAutoStart(chkAuto.Checked); 
                 this.Close(); 
             }; 
