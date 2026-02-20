@@ -87,7 +87,7 @@ namespace SimpleBrightness
                 SaveAllSettings();
                 mouseHook?.Uninstall();
                 UnregisterHotkeys();
-                trayIcon.Visible = false;
+                trayIcon!.Visible = false;
                 Application.Exit(); 
             });
 
@@ -579,7 +579,11 @@ namespace SimpleBrightness
                             var handleProp = window.GetType().GetProperty("Handle", BindingFlags.Public | BindingFlags.Instance);
                             if (handleProp != null)
                             {
-                                _trayIconHandle = (IntPtr)handleProp.GetValue(window);
+                                var handleValue = handleProp.GetValue(window);
+                                if (handleValue != null)
+                                {
+                                    _trayIconHandle = (IntPtr)handleValue;
+                                }
                             }
                         }
                     }
@@ -588,7 +592,11 @@ namespace SimpleBrightness
                         if (field.Name.ToLowerInvariant().Contains("hwnd") || 
                             field.Name.ToLowerInvariant().Contains("handle"))
                         {
-                            _trayIconHandle = (IntPtr)field.GetValue(trayIcon);
+                            var fieldValue = field.GetValue(trayIcon);
+                            if (fieldValue != null)
+                            {
+                                _trayIconHandle = (IntPtr)fieldValue;
+                            }
                         }
                     }
                 }

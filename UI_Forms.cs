@@ -214,7 +214,7 @@ namespace SimpleBrightness
         protected override void OnControlAdded(ControlEventArgs e)
         {
             base.OnControlAdded(e);
-            if (e.Control != _customScrollBar && _contentControl == null)
+            if (e.Control != _customScrollBar && _contentControl == null && e.Control != null)
             {
                 _contentControl = e.Control;
                 _contentControl.LocationChanged += (s, ev) => UpdateScrollBar();
@@ -1526,8 +1526,6 @@ namespace SimpleBrightness
         private CurveGraphControl _graph;
         private ToolTip _tooltip;
         private bool _showMinMaxUnlock = false;
-        private int _minBrightnessLimit = 0;
-        private int _maxBrightnessLimit = 100;
         
         private Dictionary<int, int> GetCurveWithFallback() {
             if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve)) return curve;
@@ -1754,7 +1752,6 @@ namespace SimpleBrightness
                     
                     int y = _points[x];
                     bool isFixed = (x == 0 || x == 100);
-                    bool modified = false;
                     
                     switch (e.KeyCode) {
                         case Keys.Up:
