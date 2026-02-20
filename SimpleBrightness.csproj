@@ -25,6 +25,7 @@
   <ItemGroup>
     <Content Include="app.ico\*.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
   </ItemGroup>
 </Project>
