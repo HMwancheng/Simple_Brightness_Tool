@@ -568,6 +568,14 @@ namespace SimpleBrightness
     public static class IconDrawer {
         // 缓存图标
         private static Dictionary<string, Icon> _iconCache = new Dictionary<string, Icon>();
+        private static string _logPath = Path.Combine(Application.StartupPath, "icon_debug.log");
+        
+        private static void LogDebug(string message) {
+            try {
+                File.AppendAllText(_logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+            }
+            catch { }
+        }
         
         /// <summary>
         /// 从ICO文件加载任务栏图标
@@ -582,32 +590,33 @@ namespace SimpleBrightness
             
             // 检查缓存
             if (_iconCache.ContainsKey(iconName)) {
+                LogDebug($"Returning cached icon: {iconName}");
                 return _iconCache[iconName];
             }
             
             // 从文件加载图标
             string iconPath = Path.Combine(Application.StartupPath, "app.ico", iconName);
             
-            // DEBUG: 输出路径信息到控制台
-            Console.WriteLine($"[IconDebug] Looking for icon: {iconPath}");
-            Console.WriteLine($"[IconDebug] StartupPath: {Application.StartupPath}");
-            Console.WriteLine($"[IconDebug] File exists: {File.Exists(iconPath)}");
+            // DEBUG: 输出路径信息到日志文件
+            LogDebug($"Looking for icon: {iconPath}");
+            LogDebug($"StartupPath: {Application.StartupPath}");
+            LogDebug($"File exists: {File.Exists(iconPath)}");
             
             if (File.Exists(iconPath)) {
                 try {
                     Icon icon = new Icon(iconPath);
                     _iconCache[iconName] = icon;
-                    Console.WriteLine($"[IconDebug] Icon loaded successfully");
+                    LogDebug($"Icon loaded successfully: {iconName}");
                     return icon;
                 }
                 catch (Exception ex) {
                     // 加载失败时返回默认图标
-                    Console.WriteLine($"[IconDebug] Failed to load icon: {ex.Message}");
+                    LogDebug($"Failed to load icon: {ex.Message}");
                 }
             }
             
             // 如果文件不存在或加载失败，使用程序生成的图标作为后备
-            Console.WriteLine($"[IconDebug] Using fallback icon");
+            LogDebug($"Using fallback icon for: {iconName}");
             return DrawNativeIconFallback();
         }
         
