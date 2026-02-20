@@ -568,17 +568,9 @@ namespace SimpleBrightness
     public static class IconDrawer {
         // 缓存图标
         private static Dictionary<string, Icon> _iconCache = new Dictionary<string, Icon>();
-        private static string _logPath = Path.Combine(Application.StartupPath, "icon_debug.log");
-        
-        private static void LogDebug(string message) {
-            try {
-                File.AppendAllText(_logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
-            }
-            catch { }
-        }
         
         /// <summary>
-        /// 从ICO文件加载任务栏图标
+        /// 从嵌入资源加载任务栏图标
         /// </summary>
         /// <param name="style">图标样式: Hybrid, Minimalist, Transparent</param>
         public static Icon LoadTrayIcon(string style) {
@@ -590,33 +582,24 @@ namespace SimpleBrightness
             
             // 检查缓存
             if (_iconCache.ContainsKey(iconName)) {
-                LogDebug($"Returning cached icon: {iconName}");
                 return _iconCache[iconName];
             }
             
-            // 从文件加载图标
-            string iconPath = Path.Combine(Application.StartupPath, "app.ico", iconName);
-            
-            // DEBUG: 输出路径信息到日志文件
-            LogDebug($"Looking for icon: {iconPath}");
-            LogDebug($"StartupPath: {Application.StartupPath}");
-            LogDebug($"File exists: {File.Exists(iconPath)}");
-            
-            if (File.Exists(iconPath)) {
-                try {
-                    Icon icon = new Icon(iconPath);
-                    _iconCache[iconName] = icon;
-                    LogDebug($"Icon loaded successfully: {iconName}");
-                    return icon;
-                }
-                catch (Exception ex) {
-                    // 加载失败时返回默认图标
-                    LogDebug($"Failed to load icon: {ex.Message}");
+            // 从嵌入资源加载图标
+            string resourceName = $"SimpleBrightness.app.ico.{iconName}";
+            try {
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                using (Stream? stream = assembly.GetManifestResourceStream(resourceName)) {
+                    if (stream != null) {
+                        Icon icon = new Icon(stream);
+                        _iconCache[iconName] = icon;
+                        return icon;
+                    }
                 }
             }
+            catch { }
             
-            // 如果文件不存在或加载失败，使用程序生成的图标作为后备
-            LogDebug($"Using fallback icon for: {iconName}");
+            // 如果资源加载失败，使用程序生成的图标作为后备
             return DrawNativeIconFallback();
         }
         
@@ -624,16 +607,9 @@ namespace SimpleBrightness
         /// 加载应用程序图标
         /// </summary>
         public static Icon LoadAppIcon() {
-            string iconPath = Path.Combine(Application.StartupPath, "app.ico", "Icon_App.ico");
-            if (File.Exists(iconPath)) {
-                try {
-                    return new Icon(iconPath);
-                }
-                catch {
-                    // 加载失败时返回默认图标
-                }
-            }
-            return DrawNativeIconFallback();
+            // 应用程序图标已通过 ApplicationIcon 属性嵌入
+            // 返回任务栏默认图标作为后备
+            return LoadTrayIcon("Hybrid");
         }
         
         public static void ClearCache() {

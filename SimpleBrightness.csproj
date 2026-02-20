@@ -21,11 +21,10 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
   
-  <!-- 包含ICO图标文件到发布输出 -->
+  <!-- 将托盘图标文件嵌入为资源 -->
   <ItemGroup>
-    <Content Include="app.ico\*.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-    </Content>
+    <EmbeddedResource Include="app.ico\Icon_Tray_Hybrid.ico" />
+    <EmbeddedResource Include="app.ico\Icon_Tray_Minimalist.ico" />
+    <EmbeddedResource Include="app.ico\Icon_Tray_Transparent.ico" />
   </ItemGroup>
 </Project>
