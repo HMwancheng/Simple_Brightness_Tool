@@ -20,4 +20,11 @@
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
+  
+  <!-- 包含ICO图标文件到发布输出 -->
+  <ItemGroup>
+    <Content Include="app.ico\*.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
