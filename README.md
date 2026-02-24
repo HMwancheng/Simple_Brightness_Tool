@@ -12,18 +12,12 @@
   *   -----**痛点解决**：解决屏幕"调到10%太暗，调到20%又太亮"或者主屏副屏"同一亮度值但实际亮度不一样"的问题。
   *   -----**精细控制**：例如：你可以让软件滑块的 0-50% 对应物理显示器的 0-20%，实现极致的自定义亮度微调。
 
-<table>
-<tr>
-<td><img width="271" height="120" alt="image" src="https://github.com/user-attachments/assets/e88aacf5-9d06-4524-afb0-d94e3c8c4583" /></td>
-<td><img width="140" height="120" alt="image" src="https://github.com/user-attachments/assets/13fdc3e7-27e9-4b9f-a811-1bb21a23e2ff" /></td>
-</tr>
-</table>
 
 **新版界面**
 
 <table>
 <tr>
-<td valign="top"><img width="310" height="240" alt="image" src="https://github.com/user-attachments/assets/b016780c-872f-4346-a149-ed70fe41d3f8" /></td>
+<td valign="top"><img width="621" height="480" alt="image" src="https://github.com/user-attachments/assets/b016780c-872f-4346-a149-ed70fe41d3f8" /></td>
 <td valign="top">
 <img width="310" height="240" alt="image" src="https://github.com/user-attachments/assets/ca3bdc72-cfea-42e6-a6a6-513afe41134d" /><br/>
 <img width="310" height="240" alt="image" src="https://github.com/user-attachments/assets/2d1797ec-6eb7-4c96-a508-b9dbaa89dbfe" />
