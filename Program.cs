@@ -1050,13 +1050,13 @@ namespace SimpleBrightness
             } 
         }
 
-        public static void SetPowerState(MonitorInfo monitor, bool turnOn) { 
+        public static void SetPowerState(MonitorInfo monitor, bool turnOn, int? powerOffMode = null) { 
             if (monitor.Type == MonitorType.DDC) {
                 if (turnOn) {
                     NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, 0x01u);
                 } else {
-                    var config = AppConfig.Load();
-                    int powerMode = config.PowerOffMode == 5 ? 5 : 4;
+                    int powerMode = powerOffMode ?? AppConfig.Load().PowerOffMode;
+                    if (powerMode != 5) powerMode = 4;
                     NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, (uint)powerMode); 
                 }
             }

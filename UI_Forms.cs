@@ -1438,7 +1438,7 @@ namespace SimpleBrightness
                         BackColor = Color.FromArgb(50, 50, 50)
                     }; 
                     btnPower.MouseDown += (s, e) => { 
-                        Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left)); 
+                        Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.PowerOffMode)); 
                     }; 
                     ToolTip tip = new ToolTip(); 
                     tip.SetToolTip(btnPower, "左键：开启 (On)\n右键：关闭 (Off)");
