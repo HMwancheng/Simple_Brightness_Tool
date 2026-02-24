@@ -381,7 +381,7 @@ namespace SimpleBrightness
             
             // Draw double circle thumb (like reference image)
             // Outer circle (white in dark mode, gray in light mode)
-            Color outerColor = ThemeManager.IsDarkMode ? Color.White : Color.FromArgb(200, 200, 200);
+            Color outerColor = ThemeManager.IsDarkMode ? Color.FromArgb(200, 200, 200) : Color.White;
             using (var outerBrush = new SolidBrush(outerColor))
             using (var outerPath = GetCirclePath(_thumbRect))
             {

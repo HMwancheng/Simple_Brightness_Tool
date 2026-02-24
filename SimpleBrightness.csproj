@@ -13,6 +13,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- 软件名称 -->
     <AssemblyName>HM's Simple Brightness Tool</AssemblyName>
+    <!-- 作者 -->
+    <Company>HMwancheng</Company>
+    <Authors>HMwancheng</Authors>
     <!-- 应用程序图标 -->
     <ApplicationIcon>app.ico\Icon_App.ico</ApplicationIcon>
   </PropertyGroup>
