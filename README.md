@@ -1,7 +1,11 @@
 # HM's Simple Brightness Tool
 
-一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。  
-~~专为解决多显示器亮度管理难题而生~~（用不惯Twinkle Tray，软件体积大，更新后挺卡，提交issue也得不到支持；社区内其他软件也没有做这个功能的，故自己搓一个适合自己体质的程序），支持 DDC/CI 外接显示器与 WMI 内置屏幕。
+一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具，**调节亮度动动手指即可，不需要去盲操复杂而又难按的锅仔片按键**；
+同时又专为解决**多显示器亮度管理难题**而设计：各个屏幕的亮度不统一？一个更亮一个更暗？~~Twinkle Tray~~也救不了的阶梯亮度不一致？为了多屏一致性妥协屏幕最大亮度？**不，咱不受这个鸟气**。
+
+**在这里，只需要花费几分钟的时间，拉一拉平面直角坐标系，一切，都会变得那么完美。**
+
+    支持 DDC/CI 外接显示器与 WMI 内置屏幕。
 
 <img width="100" height="100" alt="icon" src="https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico/Icon_App.ico" />
 
