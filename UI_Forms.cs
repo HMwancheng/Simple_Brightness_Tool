@@ -1089,19 +1089,10 @@ namespace SimpleBrightness
                 ForeColor = ThemeManager.Text,
                 FlatStyle = FlatStyle.Flat
             };
-            cmbPower.Items.Add("待机 (0x04) - 指示灯变红");
-            cmbPower.Items.Add("关机 (0x05) - 指示灯熄灭");
+            cmbPower.Items.Add("待机 (0x04)");
+            cmbPower.Items.Add("关机 (0x05)");
             cmbPower.SelectedIndex = config.PowerOffMode == 5 ? 1 : 0;
             panel.Controls.Add(cmbPower);
-
-            Label lblPowerTip = new Label {
-                Text = "待机模式唤醒更快，关机模式功耗更低",
-                AutoSize = true,
-                Font = new Font("Segoe UI Variable Text", 9),
-                ForeColor = ThemeManager.TextSecondary,
-                Margin = new Padding(0, 0, 0, 15)
-            };
-            panel.Controls.Add(lblPowerTip);
 
             // Tray Icon Style Selection
             Label lblTrayIcon = new Label { 

@@ -1055,8 +1055,9 @@ namespace SimpleBrightness
                 if (turnOn) {
                     NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, 0x01u);
                 } else {
-                    uint code = (uint)AppConfig.Load().PowerOffMode;
-                    NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
+                    var config = AppConfig.Load();
+                    int powerMode = config.PowerOffMode == 5 ? 5 : 4;
+                    NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, (uint)powerMode); 
                 }
             }
         }
