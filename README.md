@@ -110,3 +110,4 @@ A: 这是正常现象。软件会在睡眠唤醒后自动检测并同步副屏�
 
 ---
 *Created by HMwancheng. Enjoy your comfortable brightness!*
+
