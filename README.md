@@ -3,7 +3,7 @@
 一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。  
 ~~专为解决多显示器亮度管理难题而生~~（用不惯Twinkle Tray，软件体积大，更新后挺卡，提交issue也得不到支持；社区内其他软件也没有做这个功能的，故自己搓一个适合自己体质的程序），支持 DDC/CI 外接显示器与 WMI 内置屏幕。
 
-![Icon](https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico) 
+<img width="100" height="100" alt="icon" src="https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico" />
 
 ## ✨ 独家功能
 
@@ -15,6 +15,10 @@
 <img width="542" height="240" alt="image" src="https://github.com/user-attachments/assets/e88aacf5-9d06-4524-afb0-d94e3c8c4583" />
 
 <img width="280" height="240" alt="image" src="https://github.com/user-attachments/assets/13fdc3e7-27e9-4b9f-a811-1bb21a23e2ff" />
+
+<img width="302" height="240" alt="image" src="https://github.com/user-attachments/assets/2d1797ec-6eb7-4c96-a508-b9dbaa89dbfe" />
+
+<img width="310" height="240" alt="image" src="https://github.com/user-attachments/assets/b016780c-872f-4346-a149-ed70fe41d3f8" />
 
 ###### 简单描述对应关系：上方数值为实际显示器输出的亮度，下方数值为软件显示（或者主屏幕）的亮度，例如：主屏35亮度实际观感上等于副屏72亮度，则上方72下方35
 
