@@ -1074,7 +1074,7 @@ namespace SimpleBrightness
             panel.Controls.Add(numDelay);
 
             Label lblPower = new Label { 
-                Text = "电源按钮模式:", 
+                Text = "关闭显示器模式:", 
                 AutoSize = true, 
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary
@@ -1084,15 +1084,24 @@ namespace SimpleBrightness
             ComboBox cmbPower = new ComboBox { 
                 Width = 320, 
                 DropDownStyle = ComboBoxStyle.DropDownList, 
-                Margin = new Padding(0, 5, 0, 20),
+                Margin = new Padding(0, 5, 0, 5),
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text,
                 FlatStyle = FlatStyle.Flat
             };
-            cmbPower.Items.Add("DDC/CI (硬件指令 - 推荐)");
-            cmbPower.Items.Add("Windows API (软件信号 - 兼容)");
-            cmbPower.SelectedIndex = config.UseSoftwarePower ? 1 : 0;
+            cmbPower.Items.Add("待机 (0x04) - 指示灯变红");
+            cmbPower.Items.Add("关机 (0x05) - 指示灯熄灭");
+            cmbPower.SelectedIndex = config.PowerOffMode == 5 ? 1 : 0;
             panel.Controls.Add(cmbPower);
+
+            Label lblPowerTip = new Label {
+                Text = "待机模式唤醒更快，关机模式功耗更低",
+                AutoSize = true,
+                Font = new Font("Segoe UI Variable Text", 9),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 15)
+            };
+            panel.Controls.Add(lblPowerTip);
 
             // Tray Icon Style Selection
             Label lblTrayIcon = new Label { 
@@ -1199,7 +1208,7 @@ namespace SimpleBrightness
             btnOk.Click += (s, e) => { 
                 config.ScrollStep = (int)numStep.Value; 
                 config.DebounceTime = (int)numDelay.Value; 
-                config.UseSoftwarePower = (cmbPower.SelectedIndex == 1);
+                config.PowerOffMode = cmbPower.SelectedIndex == 1 ? 5 : 4;
                 // Save hotkeys
                 string newIncrease = capturedIncrease;
                 string newDecrease = capturedDecrease;
@@ -1438,7 +1447,7 @@ namespace SimpleBrightness
                         BackColor = Color.FromArgb(50, 50, 50)
                     }; 
                     btnPower.MouseDown += (s, e) => { 
-                        Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.UseSoftwarePower)); 
+                        Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left)); 
                     }; 
                     ToolTip tip = new ToolTip(); 
                     tip.SetToolTip(btnPower, "左键：开启 (On)\n右键：关闭 (Off)");

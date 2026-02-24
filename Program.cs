@@ -1050,74 +1050,16 @@ namespace SimpleBrightness
             } 
         }
 
-        public static void SetPowerState(MonitorInfo monitor, bool turnOn, bool useSoftwareMode) { 
-            if (useSoftwareMode) {
+        public static void SetPowerState(MonitorInfo monitor, bool turnOn) { 
+            if (monitor.Type == MonitorType.DDC) {
                 if (turnOn) {
-                    // 改进的唤醒策略：多种方式组合唤醒
-                    WakeDisplaySoftware();
+                    NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, 0x01u);
                 } else {
-                    // 只关闭指定显示器（如果是DDC类型），否则使用系统API
-                    if (monitor.Type == MonitorType.DDC) {
-                        // 使用DDC/CI关闭特定显示器，而不是广播到所有窗口
-                        NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, 0x04u);
-                    } else {
-                        // WMI类型（内置屏幕）使用系统API关闭
-                        NativeMethods.SendMessage(new IntPtr(0xFFFF), 0x0112, 0xF170, 2);
-                    }
-                }
-            } else if (monitor.Type == MonitorType.DDC) {
-                if (turnOn) {
-                    // 改进的DDC唤醒：多次尝试和渐进式唤醒
-                    WakeDisplayDDC(monitor.Handle);
-                } else {
-                    uint code = 0x04u; 
+                    uint code = (uint)AppConfig.Load().PowerOffMode;
                     NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, code); 
                 }
             }
         }
-
-        // 软件模式唤醒 - 改进的鼠标和键盘事件组合
-        private static void WakeDisplaySoftware() {
-            // 方法1: 鼠标微动
-            NativeMethods.mouse_event(0x0001, 0, 1, 0, UIntPtr.Zero);
-            Thread.Sleep(10);
-            NativeMethods.mouse_event(0x0001, 0, -1, 0, UIntPtr.Zero);
-            Thread.Sleep(50);
-            
-            // 方法2: 发送虚拟键盘事件 (VK_SHIFT)
-            NativeMethods.keybd_event(0x10, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(10);
-            NativeMethods.keybd_event(0x10, 0, 0x0002, UIntPtr.Zero);
-            Thread.Sleep(50);
-            
-            // 方法3: 再次鼠标微动确保唤醒
-            NativeMethods.mouse_event(0x0001, 1, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(10);
-            NativeMethods.mouse_event(0x0001, -1, 0, 0, UIntPtr.Zero);
-        }
-
-        // DDC/CI 模式唤醒 - 多次尝试和渐进式唤醒策略
-        private static void WakeDisplayDDC(IntPtr hMonitor) {
-            // 策略: 先发送软唤醒，如果失败再尝试硬唤醒
-            
-            // 尝试1: 发送电源开命令 (0x01)
-            NativeMethods.SetVCPFeature(hMonitor, 0xD6, 0x01u);
-            Thread.Sleep(100);
-            
-            // 尝试2: 发送短暂黑屏后恢复 (某些显示器需要这个序列)
-            NativeMethods.SetVCPFeature(hMonitor, 0xD6, 0x01u);
-            Thread.Sleep(200);
-            
-            // 尝试3: 如果显示器支持，发送背光开启命令
-            // 0xD6 = 0x01 (正常操作)
-            for (int i = 0; i < 3; i++) {
-                NativeMethods.SetVCPFeature(hMonitor, 0xD6, 0x01u);
-                Thread.Sleep(100);
-            }
-            
-            // 尝试4: 同时触发软件唤醒作为后备
-            WakeDisplaySoftware();
-        } 
 
         public static int GetVCPBrightness(IntPtr hMonitor) { 
             uint current = 50, max = 100; 
@@ -1129,7 +1071,7 @@ namespace SimpleBrightness
     public class AppConfig { 
         public int ScrollStep { get; set; } = 5; 
         public int DebounceTime { get; set; } = 200; 
-        public bool UseSoftwarePower { get; set; } = false;
+        public int PowerOffMode { get; set; } = 4; // 4=待机, 5=关机
         public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
         public string HotkeyIncrease { get; set; } = "Ctrl+F5";  // Default hotkey for brightness increase
         public string HotkeyDecrease { get; set; } = "Ctrl+F6";  // Default hotkey for brightness decrease
