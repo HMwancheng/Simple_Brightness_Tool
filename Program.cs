@@ -55,6 +55,9 @@ namespace SimpleBrightness
             config = AppConfig.Load();
             config.Save();
 
+            // 注册显示器句柄刷新回调（用于电源控制）
+            BrightnessController.RefreshMonitorHandleCallback = GetLatestMonitorHandle;
+
             RefreshMonitors();
             RestoreOrReadBrightness();
             
@@ -956,6 +959,77 @@ namespace SimpleBrightness
             return monitors;
         }
 
+        /// <summary>
+        /// 根据 UniqueId 获取最新的显示器句柄（用于睡眠唤醒后刷新句柄）
+        /// </summary>
+        /// <param name="uniqueId">显示器唯一标识</param>
+        /// <returns>最新的显示器物理句柄，如果未找到则返回 IntPtr.Zero</returns>
+        private IntPtr GetLatestMonitorHandle(string uniqueId)
+        {
+            // 先在当前显示器列表中查找
+            var monitor = monitors.FirstOrDefault(m => m.UniqueId == uniqueId);
+            if (monitor != null && monitor.Handle != IntPtr.Zero)
+            {
+                return monitor.Handle;
+            }
+
+            // 如果未找到，尝试重新枚举显示器获取最新句柄
+            IntPtr foundHandle = IntPtr.Zero;
+            string targetId = uniqueId;
+            
+            NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) {
+                int count = 0;
+                NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
+                if (count > 0) {
+                    var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
+                    if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs)) {
+                        for (int i = 0; i < pMs.Length; i++) {
+                            string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
+                            string currentUniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
+                            
+                            // 匹配 UniqueId
+                            if (currentUniqueId == targetId) {
+                                foundHandle = pMs[i].hPhysicalMonitor;
+                            } else {
+                                // 尝试匹配相同 nameHash 的旧 ID（句柄变化后的兼容）
+                                if (targetId.StartsWith("DDC_") && targetId.Contains("_H")) {
+                                    string[] parts = targetId.Split('_');
+                                    if (parts.Length >= 4) {
+                                        string targetNameHash = parts[1];
+                                        string currentNameHash = GetStableHash(originalName);
+                                        if (targetNameHash == currentNameHash) {
+                                            // 找到相同名称哈希的显示器，使用新句柄
+                                            foundHandle = pMs[i].hPhysicalMonitor;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            // 更新显示器列表中的句柄
+            if (foundHandle != IntPtr.Zero) {
+                var existingMonitor = monitors.FirstOrDefault(m => m.UniqueId == uniqueId);
+                if (existingMonitor != null) {
+                    existingMonitor.Handle = foundHandle;
+                } else {
+                    // 如果显示器不存在于列表中，添加它
+                    monitors.Add(new MonitorInfo { 
+                        Type = MonitorType.DDC, 
+                        Handle = foundHandle, 
+                        UniqueId = uniqueId,
+                        Name = "外接显示器",
+                        LastBrightness = 50
+                    });
+                }
+            }
+
+            return foundHandle;
+        }
+
         public void RefreshMonitors()
         {
             monitors.Clear();
@@ -1030,6 +1104,9 @@ namespace SimpleBrightness
     public static class BrightnessController 
     {
         private static ConcurrentDictionary<string, CancellationTokenSource> _debounceTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
+        
+        // 显示器句柄刷新回调（用于睡眠唤醒后重新获取最新句柄）
+        public static Func<string, IntPtr>? RefreshMonitorHandleCallback { get; set; }
 
         public static void SetBrightnessDebounced(MonitorInfo monitor, int level, int debounceMs) {
             if (_debounceTokens.TryGetValue(monitor.UniqueId, out CancellationTokenSource? oldCts)) { oldCts.Cancel(); oldCts.Dispose(); }
@@ -1052,12 +1129,21 @@ namespace SimpleBrightness
 
         public static void SetPowerState(MonitorInfo monitor, bool turnOn, int? powerOffMode = null) { 
             if (monitor.Type == MonitorType.DDC) {
+                // 睡眠唤醒后显示器句柄可能已变化，尝试刷新句柄
+                IntPtr actualHandle = monitor.Handle;
+                if (RefreshMonitorHandleCallback != null && !string.IsNullOrEmpty(monitor.UniqueId)) {
+                    IntPtr refreshedHandle = RefreshMonitorHandleCallback(monitor.UniqueId);
+                    if (refreshedHandle != IntPtr.Zero) {
+                        actualHandle = refreshedHandle;
+                    }
+                }
+                
                 if (turnOn) {
-                    NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, 0x01u);
+                    NativeMethods.SetVCPFeature(actualHandle, 0xD6, 0x01u);
                 } else {
                     int powerMode = powerOffMode ?? AppConfig.Load().PowerOffMode;
                     if (powerMode != 5) powerMode = 4;
-                    NativeMethods.SetVCPFeature(monitor.Handle, 0xD6, (uint)powerMode); 
+                    NativeMethods.SetVCPFeature(actualHandle, 0xD6, (uint)powerMode); 
                 }
             }
         }
