@@ -15,14 +15,14 @@ jobs:
 
     steps:
     # 1. 检出代码 (fetch-depth: 0 确保能检测到文件变动历史)
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
     # 2. 检测 BuildRelease.md 是否发生变化
     - name: Check for Release Update
       id: check_file
-      uses: dorny/paths-filter@v2
+      uses: dorny/paths-filter@v3
       with:
         filters: |
           release:
@@ -30,7 +30,7 @@ jobs:
 
     # 3. 配置 .NET 环境
     - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+      uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 8.0.x
 
@@ -48,6 +48,7 @@ jobs:
       with:
         name: SimpleBrightnessTool
         path: build_output/*.exe
+        retention-days: 30
 
     # 7. 生成版本号 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
     # 使用时间戳作为版本号，例如 v2025.01.01.1230
