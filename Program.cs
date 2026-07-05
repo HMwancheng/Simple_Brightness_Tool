@@ -407,11 +407,10 @@ namespace SimpleBrightness
             var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
             if (form != null && !form.IsDisposed && form.Visible) form.Invoke(new Action(() => form.Close()));
             
-            // 先保存当前所有显示器的亮度值
+            // 先保存当前所有显示器的亮度值（UI线程）
             foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             
-            // 清空显示器列表和OSD，强制重新创建
-            monitors.Clear();
+            // 清理OSD（UI线程）
             if (_osdForm != null && !_osdForm.IsDisposed) {
                 try {
                     _osdForm.Invoke(new Action(() => _osdForm.Dispose()));
@@ -419,16 +418,19 @@ namespace SimpleBrightness
                 _osdForm = null;
             }
             
-            // 重新扫描显示器（后台线程执行，避免DDC/CI阻塞UI线程导致鼠标卡顿）
-            await Task.Run(() => RefreshMonitors());
+            // 后台线程执行：清空列表 + DDC枚举 + 恢复亮度，避免UI线程访问不一致的monitors状态
+            await Task.Run(() => {
+                monitors.Clear();
+                RefreshMonitors();
+                
+                int idx = 0;
+                foreach(var m in monitors) {
+                    var savedVal = GetSavedBrightnessForMonitor(m, idx);
+                    if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
+                    idx++;
+                }
+            });
             
-            // 恢复亮度值
-            int idx = 0;
-            foreach(var m in monitors) {
-                var savedVal = GetSavedBrightnessForMonitor(m, idx);
-                if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
-                idx++;
-            }
             Task.Run(() => ReadRealBrightness());
         }
 
@@ -1141,7 +1143,7 @@ namespace SimpleBrightness
             if (_debounceTokens.TryGetValue(monitor.UniqueId, out CancellationTokenSource? oldCts)) { oldCts.Cancel(); oldCts.Dispose(); }
             var cts = new CancellationTokenSource(); _debounceTokens[monitor.UniqueId] = cts;
             Task.Run(async () => {
-                try { await Task.Delay(debounceMs, cts.Token); SetBrightnessImmediate(monitor, level); } catch (TaskCanceledException) { } finally { cts.Dispose(); }
+                try { await Task.Delay(debounceMs, cts.Token); SetBrightnessImmediate(monitor, level); } catch (TaskCanceledException) { } finally { if (_debounceTokens.TryRemove(monitor.UniqueId, out var existing) && existing == cts) cts.Dispose(); }
             });
         }
 
