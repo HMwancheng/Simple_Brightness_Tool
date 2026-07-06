@@ -1,15 +1,9 @@
 # HM's Simple Brightness Tool
 
-一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。
-**调节亮度动动手指即可，不需要去盲操复杂而又难按的锅仔片按键**；
+一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。  
+~~专为解决多显示器亮度管理难题而生~~（用不惯Twinkle Tray，软件体积大，更新后挺卡，提交issue也得不到支持；社区内其他软件也没有做这个功能的，故自己搓一个适合自己体质的程序），支持 DDC/CI 外接显示器与 WMI 内置屏幕。
 
-同时又专为解决**多显示器亮度管理难题**而设计：各个屏幕的亮度不统一？一个更亮一个更暗？~~Twinkle Tray~~也救不了的阶梯亮度不一致？为了多屏一致性妥协屏幕最大亮度？**不，咱不受这个鸟气**。
-
-**在这里，只需要花费几分钟的时间，拉一拉平面直角坐标系，一切，都会变得那么完美。**
-
-    支持 DDC/CI 外接显示器与 WMI 内置屏幕。
-
-<img width="100" height="100" alt="icon" src="https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico/Icon_App.ico" />
+![Icon](https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico/Icon_App.ico) 
 
 ## ✨ 独家功能
 
@@ -18,27 +12,9 @@
   *   -----**痛点解决**：解决屏幕"调到10%太暗，调到20%又太亮"或者主屏副屏"同一亮度值但实际亮度不一样"的问题。
   *   -----**精细控制**：例如：你可以让软件滑块的 0-50% 对应物理显示器的 0-20%，实现极致的自定义亮度微调。
 
+<img width="542" height="240" alt="image" src="https://github.com/user-attachments/assets/e88aacf5-9d06-4524-afb0-d94e3c8c4583" />
 
-**新版界面**
-
-<table>
-<tr>
-<td valign="top"><img width="621" height="480" alt="image" src="https://github.com/user-attachments/assets/b016780c-872f-4346-a149-ed70fe41d3f8" /></td>
-<td valign="top">
-<img width="310" height="240" alt="image" src="https://github.com/user-attachments/assets/ca3bdc72-cfea-42e6-a6a6-513afe41134d" /><br/>
-<img width="310" height="240" alt="image" src="https://github.com/user-attachments/assets/2d1797ec-6eb7-4c96-a508-b9dbaa89dbfe" />
-</td>
-</tr>
-</table>
-
-**旧版界面**
-
-<table>
-<tr>
-<td><img width="271" height="120" alt="image" src="https://github.com/user-attachments/assets/e88aacf5-9d06-4524-afb0-d94e3c8c4583" /></td>
-<td><img width="140" height="120" alt="image" src="https://github.com/user-attachments/assets/13fdc3e7-27e9-4b9f-a811-1bb21a23e2ff" /></td>
-</tr>
-</table>
+<img width="280" height="240" alt="image" src="https://github.com/user-attachments/assets/13fdc3e7-27e9-4b9f-a811-1bb21a23e2ff" />
 
 ###### 简单描述对应关系：上方数值为实际显示器输出的亮度，下方数值为软件显示（或者主屏幕）的亮度，例如：主屏35亮度实际观感上等于副屏72亮度，则上方72下方35
 
@@ -110,4 +86,3 @@ A: 这是正常现象。软件会在睡眠唤醒后自动检测并同步副屏�
 
 ---
 *Created by HMwancheng. Enjoy your comfortable brightness!*
-
