@@ -609,6 +609,10 @@ namespace SimpleBrightness
         {
             try
             {
+                // 重置缓存值，确保每次调用都能重新读取最新句柄（休眠后句柄会变化）
+                _trayIconHandle = IntPtr.Zero;
+                _trayIconId = 0;
+                
                 var notifyIconType = typeof(NotifyIcon);
                 
                 var allFields = notifyIconType.GetFields(BindingFlags.NonPublic | BindingFlags.Instance);
