@@ -219,25 +219,10 @@ namespace SimpleBrightness
             SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
         }
         private async void SystemEvents_PowerModeChanged(object? sender, PowerModeChangedEventArgs e) {
-            if (e.Mode == PowerModes.Resume) { 
-                await Task.Delay(2000); 
-                ReloadMonitorsSafe(); 
-                // 休眠唤醒后重新安装鼠标钩子（解决钩子失效问题）
-                mouseHook?.Uninstall();
-                mouseHook?.Install();
-                // 刷新托盘图标缓存（解决Shell_NotifyIconGetRect失效问题）
-                CacheTrayIconInfo();
-            }
+            if (e.Mode == PowerModes.Resume) { await Task.Delay(2000); ReloadMonitorsSafe(); }
         }
         private async void SystemEvents_SessionSwitch(object? sender, SessionSwitchEventArgs e) {
-            if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect) { 
-                await Task.Delay(2000); 
-                ReloadMonitorsSafe(); 
-                // 会话恢复后重新安装鼠标钩子并刷新托盘图标缓存
-                mouseHook?.Uninstall();
-                mouseHook?.Install();
-                CacheTrayIconInfo();
-            }
+            if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect) { await Task.Delay(2000); ReloadMonitorsSafe(); }
         }
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
 
@@ -403,14 +388,15 @@ namespace SimpleBrightness
             return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
         }
 
-        private async void ReloadMonitorsSafe() {
+        private void ReloadMonitorsSafe() {
             var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
             if (form != null && !form.IsDisposed && form.Visible) form.Invoke(new Action(() => form.Close()));
             
-            // 先保存当前所有显示器的亮度值（UI线程）
+            // 先保存当前所有显示器的亮度值
             foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             
-            // 清理OSD（UI线程）
+            // 清空显示器列表和OSD，强制重新创建
+            monitors.Clear();
             if (_osdForm != null && !_osdForm.IsDisposed) {
                 try {
                     _osdForm.Invoke(new Action(() => _osdForm.Dispose()));
@@ -418,19 +404,16 @@ namespace SimpleBrightness
                 _osdForm = null;
             }
             
-            // 后台线程执行：清空列表 + DDC枚举 + 恢复亮度，避免UI线程访问不一致的monitors状态
-            await Task.Run(() => {
-                monitors.Clear();
-                RefreshMonitors();
-                
-                int idx = 0;
-                foreach(var m in monitors) {
-                    var savedVal = GetSavedBrightnessForMonitor(m, idx);
-                    if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
-                    idx++;
-                }
-            });
+            // 重新扫描显示器
+            RefreshMonitors();
             
+            // 恢复亮度值
+            int idx = 0;
+            foreach(var m in monitors) {
+                var savedVal = GetSavedBrightnessForMonitor(m, idx);
+                if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
+                idx++;
+            }
             Task.Run(() => ReadRealBrightness());
         }
 
@@ -585,31 +568,6 @@ namespace SimpleBrightness
                         return pt.X >= rect.left && pt.X <= rect.right &&
                                pt.Y >= rect.top && pt.Y <= rect.bottom;
                     }
-                    // 首次查询失败（休眠后可能发生），刷新缓存后重试
-                    CacheTrayIconInfo();
-                    if (_trayIconHandle != IntPtr.Zero && _trayIconId != 0)
-                    {
-                        nid.hWnd = _trayIconHandle;
-                        nid.uID = _trayIconId;
-                        result = NativeMethods.Shell_NotifyIconGetRect(ref nid, out rect);
-                        if (result == 0)
-                        {
-                            var pt = Cursor.Position;
-                            return pt.X >= rect.left && pt.X <= rect.right &&
-                                   pt.Y >= rect.top && pt.Y <= rect.bottom;
-                        }
-                    }
-                }
-                
-                // 回退方案：Shell_NotifyIconGetRect 失败时，用任务栏通知区域近似判断
-                // 休眠后图标句柄可能失效，但任务栏区域仍可检测
-                var screen = Screen.FromPoint(Cursor.Position);
-                var pt2 = Cursor.Position;
-                int taskbarBottom = screen.Bounds.Bottom - screen.WorkingArea.Bottom;
-                if (taskbarBottom > 0 && pt2.Y >= screen.WorkingArea.Bottom)
-                {
-                    // 鼠标在底部任务栏区域，通知区域约占右侧250px
-                    return pt2.X >= screen.WorkingArea.Right - 250;
                 }
             }
             catch { }
@@ -620,10 +578,6 @@ namespace SimpleBrightness
         {
             try
             {
-                // 重置缓存值，确保每次调用都能重新读取最新句柄（休眠后句柄会变化）
-                _trayIconHandle = IntPtr.Zero;
-                _trayIconId = 0;
-                
                 var notifyIconType = typeof(NotifyIcon);
                 
                 var allFields = notifyIconType.GetFields(BindingFlags.NonPublic | BindingFlags.Instance);
@@ -1158,7 +1112,7 @@ namespace SimpleBrightness
             if (_debounceTokens.TryGetValue(monitor.UniqueId, out CancellationTokenSource? oldCts)) { oldCts.Cancel(); oldCts.Dispose(); }
             var cts = new CancellationTokenSource(); _debounceTokens[monitor.UniqueId] = cts;
             Task.Run(async () => {
-                try { await Task.Delay(debounceMs, cts.Token); SetBrightnessImmediate(monitor, level); } catch (TaskCanceledException) { } finally { if (_debounceTokens.TryRemove(monitor.UniqueId, out var existing) && existing == cts) cts.Dispose(); }
+                try { await Task.Delay(debounceMs, cts.Token); SetBrightnessImmediate(monitor, level); } catch (TaskCanceledException) { }
             });
         }
 
@@ -1169,15 +1123,7 @@ namespace SimpleBrightness
                     foreach (ManagementObject m in searcher.Get()) m.InvokeMethod("WmiSetBrightness", new object[] { 1, level }); 
                 } catch {} 
             } else if (monitor.Type == MonitorType.DDC) { 
-                // 休眠唤醒后显示器句柄可能已失效，尝试刷新
-                IntPtr actualHandle = monitor.Handle;
-                if (RefreshMonitorHandleCallback != null && !string.IsNullOrEmpty(monitor.UniqueId)) {
-                    IntPtr refreshedHandle = RefreshMonitorHandleCallback(monitor.UniqueId);
-                    if (refreshedHandle != IntPtr.Zero) {
-                        actualHandle = refreshedHandle;
-                    }
-                }
-                NativeMethods.SetVCPFeature(actualHandle, 0x10, (uint)level); 
+                NativeMethods.SetVCPFeature(monitor.Handle, 0x10, (uint)level); 
             } 
         }
 
