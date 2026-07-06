@@ -16,6 +16,7 @@ SBT-TR 版本更新
 *   **修复休眠后亮度调节静默失败** - DDC SetVCPFeature 调用前刷新显示器句柄
 *   **修复托盘图标位置检测失败** - 增加缓存刷新重试机制
 *   **修复 CTS 内存泄漏** - SetBrightnessDebounced 中 finally 释放 CancellationTokenSource
+*   **修复软件崩溃**
 
 ---
 
