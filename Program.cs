@@ -600,6 +600,17 @@ namespace SimpleBrightness
                         }
                     }
                 }
+                
+                // 回退方案：Shell_NotifyIconGetRect 失败时，用任务栏通知区域近似判断
+                // 休眠后图标句柄可能失效，但任务栏区域仍可检测
+                var screen = Screen.FromPoint(Cursor.Position);
+                var pt2 = Cursor.Position;
+                int taskbarBottom = screen.Bounds.Bottom - screen.WorkingArea.Bottom;
+                if (taskbarBottom > 0 && pt2.Y >= screen.WorkingArea.Bottom)
+                {
+                    // 鼠标在底部任务栏区域，通知区域约占右侧250px
+                    return pt2.X >= screen.WorkingArea.Right - 250;
+                }
             }
             catch { }
             return false;
