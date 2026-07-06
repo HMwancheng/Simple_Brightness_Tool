@@ -388,7 +388,7 @@ namespace SimpleBrightness
             return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
         }
 
-        private void ReloadMonitorsSafe() {
+        private async void ReloadMonitorsSafe() {
             var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
             if (form != null && !form.IsDisposed && form.Visible) form.Invoke(new Action(() => form.Close()));
             
@@ -404,8 +404,8 @@ namespace SimpleBrightness
                 _osdForm = null;
             }
             
-            // 重新扫描显示器
-            RefreshMonitors();
+            // 重新扫描显示器（后台线程执行DDC/CI枚举，避免阻塞UI导致鼠标卡顿）
+            await Task.Run(() => RefreshMonitors());
             
             // 恢复亮度值
             int idx = 0;
