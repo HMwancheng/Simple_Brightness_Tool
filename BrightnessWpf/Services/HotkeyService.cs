@@ -79,7 +79,7 @@ public sealed class HotkeyService : IDisposable
         foreach (int id in _registeredIds)
             UnregisterHotKey(_window.Handle, id);
         _registeredIds.Clear();
-        _window.Destroy();
+        _window.DestroyHandle();
     }
 
     // 消息窗口，接收 WM_HOTKEY
