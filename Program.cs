@@ -46,6 +46,8 @@ namespace SimpleBrightness
         private MouseHook mouseHook;
         private NativeOsdForm? _osdForm; 
         private bool _isDebugMode = false;
+        /// <summary>显示器重扫单次标记：合并唤醒时同时触发的多个系统事件，防止重复全量扫描（WMI/DDC 很耗时）</summary>
+        private int _reloading = 0;
         private IntPtr _trayIconHandle = IntPtr.Zero;
         private uint _trayIconId = 0;
         private HotkeyMessageWindow? _hotkeyWindow;
@@ -226,23 +228,6 @@ namespace SimpleBrightness
         }
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
 
-        // 从UniqueId中提取旧版ID格式
-        private string GetOldIdFromUniqueId(string uniqueId, int index)
-        {
-            // 新ID格式: DDC_{nameHash}_H{handle}_IDX_{i}
-            // 旧ID格式: DDC_{nameHash}_IDX_{i}
-            if (uniqueId.StartsWith("DDC_") && uniqueId.Contains("_H"))
-            {
-                string[] parts = uniqueId.Split('_');
-                if (parts.Length >= 4)
-                {
-                    string nameHash = parts[1];
-                    return $"DDC_{nameHash}_IDX_{index}";
-                }
-            }
-            return "";
-        }
-
         // 获取显示器的亮度配置值，支持新旧ID格式兼容
         private int? GetSavedBrightnessForMonitor(MonitorInfo m, int index)
         {
@@ -388,33 +373,58 @@ namespace SimpleBrightness
             return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
         }
 
-        private async void ReloadMonitorsSafe() {
-            var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
-            if (form != null && !form.IsDisposed && form.Visible) form.Invoke(new Action(() => form.Close()));
-            
-            // 先保存当前所有显示器的亮度值
-            foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
-            
-            // 清空显示器列表和OSD，强制重新创建
-            monitors.Clear();
-            if (_osdForm != null && !_osdForm.IsDisposed) {
-                try {
-                    _osdForm.Invoke(new Action(() => _osdForm.Dispose()));
-                } catch { }
-                _osdForm = null;
+        private void ReloadMonitorsSafe() {
+            // [卡顿修复] 睡眠唤醒时，Resume / SessionUnlock / DisplaySettingsChanged 三个系统事件几乎同时触发本方法。
+            // 低层鼠标钩子（SetWindowsHookEx）的回调运行在 UI 线程上，而 WMI 查询 + DDC 枚举非常耗时。
+            // 若在 UI 线程同步执行，会阻塞消息泵，导致唤醒后鼠标卡顿 1-3 秒。
+            // 这里用单次标记合并并发请求，并把重量级扫描放后台线程执行。
+            if (Interlocked.CompareExchange(ref _reloading, 1, 0) != 0) return;
+
+            // 关闭主窗口（UI 控件操作，用 BeginInvoke 异步进行，不阻塞）
+            try {
+                var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
+                if (form != null && !form.IsDisposed && form.Visible)
+                    form.BeginInvoke(new Action(() => form.Close()));
+            } catch { }
+
+            // 旧 OSD 弹出层延迟销毁（异步，不阻塞）
+            var oldOsd = _osdForm;
+            if (oldOsd != null && !oldOsd.IsDisposed) {
+                try { oldOsd.BeginInvoke(new Action(() => oldOsd.Dispose())); } catch { }
             }
-            
-            // 重新扫描显示器（后台线程执行DDC/CI枚举，避免阻塞UI导致鼠标卡顿）
-            await Task.Run(() => RefreshMonitors());
-            
-            // 恢复亮度值
+            _osdForm = null;
+
+            // 先保存当前亮度（字典操作，很快，留在 UI 线程）
+            foreach (var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
+
+            // 重量级扫描放到后台线程，避免阻塞鼠标钩子所在的 UI 线程
+            Task.Run(() => {
+                try {
+                    // 清空显示器列表，强制重新创建
+                    monitors.Clear();
+
+                    // 重新扫描显示器（WMI + DDC 枚举，纯数据操作）
+                    RefreshMonitors();
+
+                    // 恢复亮度值
+                    RestoreBrightnessAfterReload();
+
+                    // 读取硬件实际亮度并反推软件值
+                    ReadRealBrightness();
+                } finally {
+                    _reloading = 0;
+                }
+            });
+        }
+
+        // 在显示器列表重建后，恢复每个显示器保存的亮度值
+        private void RestoreBrightnessAfterReload() {
             int idx = 0;
-            foreach(var m in monitors) {
+            foreach (var m in monitors) {
                 var savedVal = GetSavedBrightnessForMonitor(m, idx);
                 if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
                 idx++;
             }
-            Task.Run(() => ReadRealBrightness());
         }
 
         private void RestoreOrReadBrightness()
@@ -912,47 +922,8 @@ namespace SimpleBrightness
             public override Color CheckPressedBackground => IsDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
         }
 
-        // 配置迁移：将旧版ID格式的配置迁移到新版
-        private void MigrateOldConfig()
-        {
-            bool needSave = false;
-            
-            // 迁移 CustomNames
-            var oldCustomNames = config.CustomNames.Keys.ToList();
-            foreach (var oldId in oldCustomNames) {
-                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
-                    // 这是旧版ID格式: DDC_{hash}_IDX_{i}
-                    // 需要找到对应的新显示器并迁移
-                    // 由于无法直接映射，我们保留旧配置，在RefreshMonitors中处理
-                }
-            }
-            
-            // 迁移 SavedBrightness
-            var oldBrightnessKeys = config.SavedBrightness.Keys.ToList();
-            foreach (var oldId in oldBrightnessKeys) {
-                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
-                    // 旧版亮度配置，暂时保留
-                }
-            }
-            
-            // 迁移 Curves
-            var oldCurveKeys = config.Curves.Keys.ToList();
-            foreach (var oldId in oldCurveKeys) {
-                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
-                    // 旧版曲线配置，暂时保留
-                }
-            }
-            
-            // 迁移 HiddenMonitors
-            var oldHidden = config.HiddenMonitors.ToList();
-            foreach (var oldId in oldHidden) {
-                if (oldId.StartsWith("DDC_") && !oldId.Contains("_H")) {
-                    // 旧版隐藏配置，暂时保留
-                }
-            }
-            
-            if (needSave) config.Save();
-        }
+        // 配置迁移：旧版ID格式的兼容逻辑已在 GetSavedBrightnessForMonitor / IsMonitorHidden /
+        // GetCurveForMonitor / RefreshMonitors 中按需实时完成，无需额外的全量迁移。
 
         public List<MonitorInfo> GetMonitors()
         {
@@ -1170,7 +1141,6 @@ namespace SimpleBrightness
         private static string ConfigPath = Path.Combine(Application.StartupPath, "HMSimpleBrightness_Config.json"); 
         public static AppConfig Load() { if (File.Exists(ConfigPath)) { try { return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath)) ?? new AppConfig(); } catch { } } return new AppConfig(); } 
         public void Save() { try { File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this)); } catch { } } 
-        public Dictionary<int, int> GetCurveForMonitor(string id) { if (Curves.ContainsKey(id)) return Curves[id]; return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } }; } 
     }
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }

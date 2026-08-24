@@ -1288,7 +1288,7 @@ namespace SimpleBrightness
             _config = config; 
             _context = context; 
             
-            this.Text = "HM's Simple Brightness Tool";
+            this.Text = "控制中心";
             this.FormBorderStyle = FormBorderStyle.FixedDialog; 
             this.ShowInTaskbar = false; 
             this.MaximizeBox = false;
@@ -2250,9 +2250,6 @@ namespace SimpleBrightness
             this.AcceptButton = b;
         }
     }
-    
-    // OsdForm (Placeholder)
-    public class OsdForm : Form { public OsdForm(string n) { } public void UpdateName(string n) { } public void ShowOSD(int v, bool d, int r, int x, int y) { } }
 
     // ================== Hotkey Capture Box ==================
     public class HotkeyCaptureBox : TextBox
