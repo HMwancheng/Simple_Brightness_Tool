@@ -128,6 +128,27 @@ public partial class MainViewModel : ObservableObject
         await InitializeAsync();
     }
 
+    /// <summary>
+    /// 托盘滚轮：按步长调整所有可调显示器的亮度（硬件调用在后台线程）。
+    /// </summary>
+    public void AdjustAllByStep(int wheelDelta)
+    {
+        if (Monitors.Count == 0) return;
+
+        int change = wheelDelta > 0 ? _config.ScrollStep : -_config.ScrollStep;
+        var pairs = Monitors.Where(vm => vm.IsAdjustable)
+                            .Select(vm => (vm, newVal: Math.Clamp(vm.Brightness + change, 0, 100)))
+                            .ToList();
+        foreach (var (vm, newVal) in pairs)
+            vm.Brightness = newVal;
+
+        Task.Run(() =>
+        {
+            foreach (var (vm, newVal) in pairs)
+                BrightnessService.SetBrightness(vm.Monitor, newVal, _config.DebounceTime, _config.GetCurveForMonitor(vm.UniqueId));
+        });
+    }
+
     public void SaveSettings()
     {
         foreach (var vm in Monitors)

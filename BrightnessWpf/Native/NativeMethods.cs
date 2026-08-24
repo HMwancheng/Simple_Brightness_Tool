@@ -46,6 +46,20 @@ public static class NativeMethods
         public string szPhysicalMonitorDescription;
     }
 
+    // ================== 托盘图标 ==================
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NOTIFYICONIDENTIFIER
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public uint uID;
+        public Guid guidItem;
+    }
+
+    [DllImport("shell32.dll", SetLastError = true)]
+    public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out Rect iconLocation);
+
     // ================== Helpers ==================
 
     public static string GetStableHash(string str)
