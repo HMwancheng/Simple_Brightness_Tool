@@ -44,11 +44,8 @@ public sealed class MouseHook : IDisposable
         if (nCode >= 0 && wParam == (IntPtr)WM_MOUSEWHEEL)
         {
             var info = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-            if (info.pt != null)
-            {
-                short delta = (short)((info.mouseData >> 16) & 0xFFFF);
-                MouseWheel?.Invoke(this, delta);
-            }
+            short delta = (short)((info.mouseData >> 16) & 0xFFFF);
+            MouseWheel?.Invoke(this, delta);
         }
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
     }

@@ -70,8 +70,8 @@ public partial class MainWindow : Window
     {
         try
         {
-            var topLeft = PointToScreen(new Point(0, 0));
-            var bottomRight = PointToScreen(new Point(ActualWidth, ActualHeight));
+            var topLeft = PointToScreen(new System.Windows.Point(0, 0));
+            var bottomRight = PointToScreen(new System.Windows.Point(ActualWidth, ActualHeight));
             var pos = Forms.Control.MousePosition;
             return pos.X >= topLeft.X && pos.X <= bottomRight.X &&
                    pos.Y >= topLeft.Y && pos.Y <= bottomRight.Y;
