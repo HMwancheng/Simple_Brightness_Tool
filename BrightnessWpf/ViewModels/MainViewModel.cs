@@ -19,6 +19,7 @@ public partial class MainViewModel : ObservableObject
 
     public string HotkeyIncrease => _config.HotkeyIncrease;
     public string HotkeyDecrease => _config.HotkeyDecrease;
+    public AppConfig Config => _config;
 
     public MainViewModel()
     {

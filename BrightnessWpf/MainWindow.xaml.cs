@@ -111,6 +111,8 @@ public partial class MainWindow : Window
         menu.Items.Add("同步多屏亮度", null, (s, e) => _ = _viewModel?.SyncAllCommand.ExecuteAsync(null));
         menu.Items.Add("重新扫描", null, (s, e) => _ = _viewModel?.RefreshCommand.ExecuteAsync(null));
         menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add("设置", null, (s, e) => ShowSettings());
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (s, e) => ShutdownApp());
         _trayIcon.ContextMenuStrip = menu;
 
@@ -138,7 +140,7 @@ public partial class MainWindow : Window
             if (IsMouseOverTrayIcon())
             {
                 _viewModel?.AdjustAllByStep(delta);
-                if (!IsVisible) ShowOsd();
+                ShowOsd();
             }
         };
         _mouseHook.Install();
@@ -152,10 +154,30 @@ public partial class MainWindow : Window
         _hotkeyService.HotkeyPressed += id =>
         {
             _viewModel.AdjustAllByStep(id == 1 ? 1 : -1);
-            if (!IsVisible) ShowOsd();
+            ShowOsd();
         };
-        _hotkeyService.Register(_viewModel.HotkeyIncrease, 1);
-        _hotkeyService.Register(_viewModel.HotkeyDecrease, 2);
+        _hotkeyService.Start(_viewModel.HotkeyIncrease, _viewModel.HotkeyDecrease);
+    }
+
+    // 设置修改后重新注册热键
+    public void ReloadHotkeys()
+    {
+        _hotkeyService?.Dispose();
+        _hotkeyService = null;
+        SetupHotkeys();
+    }
+
+    // 打开设置窗口
+    private void ShowSettings()
+    {
+        if (_viewModel == null) return;
+        var win = new SettingsWindow(_viewModel.Config) { Owner = this };
+        win.ShowDialog();
+        if (win.Saved)
+        {
+            ThemeManager.Apply(_viewModel.Config.ThemeMode);
+            ReloadHotkeys();
+        }
     }
 
     // 系统事件：唤醒/解锁/显示变更 → 重新扫描显示器（合并并发 + 延迟，避免卡顿）
@@ -246,6 +268,8 @@ public partial class MainWindow : Window
 
     private void Refresh_Click(object sender, RoutedEventArgs e) =>
         _ = _viewModel?.RefreshCommand.ExecuteAsync(null);
+
+    private void Settings_Click(object sender, RoutedEventArgs e) => ShowSettings();
 
     private void Exit_Click(object sender, RoutedEventArgs e) => ShutdownApp();
 

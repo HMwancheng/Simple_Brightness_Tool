@@ -1,10 +1,10 @@
 using System.Runtime.InteropServices;
-using Forms = System.Windows.Forms;
+using System.Windows.Interop;
 
 namespace BrightnessWpf.Services;
 
 /// <summary>
-/// 全局热键。迁移自原版 HotkeyMessageWindow（RegisterHotKey + 消息窗口）。
+/// 全局热键。使用 HwndSource 接收 WM_HOTKEY（WPF 消息泵原生支持，比 WinForms NativeWindow 更可靠）。
 /// </summary>
 public sealed class HotkeyService : IDisposable
 {
@@ -14,24 +14,43 @@ public sealed class HotkeyService : IDisposable
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
 
-    private readonly HotkeyWindow _window;
+    private HwndSource? _source;
     private readonly List<int> _registeredIds = new();
 
     /// <summary>热键触发事件，参数为注册时的 ID。</summary>
     public event Action<int>? HotkeyPressed;
 
-    public HotkeyService()
+    /// <summary>注册"提升亮度"和"降低亮度"热键（ID 分别为 1、2）。</summary>
+    public void Start(string hotkeyIncrease, string hotkeyDecrease)
     {
-        _window = new HotkeyWindow(this);
+        _source = new HwndSource(new HwndSourceParameters("HMSimpleBrightnessHotkeyWindow")
+        {
+            Width = 0,
+            Height = 0,
+            WindowStyle = unchecked((int)0x80000000), // WS_POPUP
+            ExtendedWindowStyle = 0x80                // WS_EX_TOOLWINDOW（消息窗口）
+        });
+        _source.AddHook(WndProc);
+        Register(hotkeyIncrease, 1);
+        Register(hotkeyDecrease, 2);
     }
 
-    /// <summary>注册热键，如 "Ctrl+F5"。</summary>
-    public bool Register(string hotkeyString, int id)
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (string.IsNullOrWhiteSpace(hotkeyString)) return false;
+        if (msg == WM_HOTKEY)
+        {
+            HotkeyPressed?.Invoke(wParam.ToInt32());
+            handled = true;
+        }
+        return IntPtr.Zero;
+    }
+
+    private bool Register(string hotkeyString, int id)
+    {
+        if (string.IsNullOrWhiteSpace(hotkeyString) || _source == null) return false;
         if (!TryParse(hotkeyString, out uint mods, out uint key) || key == 0) return false;
 
-        bool ok = RegisterHotKey(_window.Handle, id, mods, key);
+        bool ok = RegisterHotKey(_source.Handle, id, mods, key);
         if (ok) _registeredIds.Add(id);
         return ok;
     }
@@ -62,7 +81,7 @@ public sealed class HotkeyService : IDisposable
                         mods |= MOD_WIN;
                         break;
                     default:
-                        key = (uint)Enum.Parse(typeof(Forms.Keys), t, true);
+                        key = (uint)Enum.Parse(typeof(FormsKeys), t, true);
                         break;
                 }
             }
@@ -74,36 +93,40 @@ public sealed class HotkeyService : IDisposable
         }
     }
 
-    public void Dispose()
+    // 避免直接依赖 WinForms 的 Keys，用本地枚举 + 值解析
+    private enum FormsKeys
     {
-        foreach (int id in _registeredIds)
-            UnregisterHotKey(_window.Handle, id);
-        _registeredIds.Clear();
-        _window.DestroyHandle();
+        F5 = 0x74,
+        F6 = 0x75,
+        F1 = 0x70,
+        F2 = 0x71,
+        F3 = 0x72,
+        F4 = 0x73,
+        F7 = 0x76,
+        F8 = 0x77,
+        F9 = 0x78,
+        F10 = 0x79,
+        F11 = 0x7A,
+        F12 = 0x7B,
+        A = 0x41, B = 0x42, C = 0x43, D = 0x44, E = 0x45, F = 0x46,
+        G = 0x47, H = 0x48, I = 0x49, J = 0x4A, K = 0x4B, L = 0x4C,
+        M = 0x4D, N = 0x4E, O = 0x4F, P = 0x50, Q = 0x51, R = 0x52,
+        S = 0x53, T = 0x54, U = 0x55, V = 0x56, W = 0x57, X = 0x58,
+        Y = 0x59, Z = 0x5A,
+        D0 = 0x30, D1 = 0x31, D2 = 0x32, D3 = 0x33, D4 = 0x34,
+        D5 = 0x35, D6 = 0x36, D7 = 0x37, D8 = 0x38, D9 = 0x39
     }
 
-    // 消息窗口，接收 WM_HOTKEY
-    private sealed class HotkeyWindow : Forms.NativeWindow
+    public void Dispose()
     {
-        private readonly HotkeyService _owner;
-
-        public HotkeyWindow(HotkeyService owner)
+        if (_source != null)
         {
-            _owner = owner;
-            CreateHandle(new Forms.CreateParams
-            {
-                ExStyle = 0x80,           // WS_EX_TOOLWINDOW（消息窗口）
-                Style = unchecked((int)0x80000000), // WS_POPUP
-                Width = 0,
-                Height = 0
-            });
-        }
-
-        protected override void WndProc(ref Forms.Message m)
-        {
-            if (m.Msg == WM_HOTKEY)
-                _owner.HotkeyPressed?.Invoke(m.WParam.ToInt32());
-            base.WndProc(ref m);
+            foreach (int id in _registeredIds)
+                UnregisterHotKey(_source.Handle, id);
+            _registeredIds.Clear();
+            _source.RemoveHook(WndProc);
+            _source.Dispose();
+            _source = null;
         }
     }
 

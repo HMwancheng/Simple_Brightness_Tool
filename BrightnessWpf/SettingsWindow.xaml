@@ -1,0 +1,35 @@
+<Window x:Class="BrightnessWpf.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="设置"
+        Width="360"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+    <StackPanel Margin="20,16">
+        <TextBlock Text="主题" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,4"/>
+        <ComboBox x:Name="ThemeCombo" FontSize="13" Margin="0,0,0,12"/>
+
+        <TextBlock Text="滚轮 / 热键步长 (1-50)" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,4"/>
+        <TextBox x:Name="StepBox" FontSize="13" Margin="0,0,0,12"/>
+
+        <TextBlock Text="去抖时间 (毫秒, 0-2000)" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,4"/>
+        <TextBox x:Name="DebounceBox" FontSize="13" Margin="0,0,0,12"/>
+
+        <TextBlock Text="提升亮度热键 (如 Ctrl+F5)" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,4"/>
+        <TextBox x:Name="HotkeyIncBox" FontSize="13" Margin="0,0,0,12"/>
+
+        <TextBlock Text="降低亮度热键 (如 Ctrl+F6)" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,4"/>
+        <TextBox x:Name="HotkeyDecBox" FontSize="13" Margin="0,0,0,12"/>
+
+        <TextBlock Text="关闭显示器模式" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,4"/>
+        <ComboBox x:Name="PowerModeCombo" FontSize="13" Margin="0,0,0,16"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="保存" Width="80" Height="32" Margin="0,0,8,0" Click="Save_Click"/>
+            <Button Content="取消" Width="80" Height="32" Click="Cancel_Click"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

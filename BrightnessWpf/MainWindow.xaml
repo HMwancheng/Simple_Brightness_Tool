@@ -8,11 +8,12 @@
         Title="HM's Simple Brightness Tool"
         Width="400"
         SizeToContent="Height"
-        WindowStyle="ToolWindow"
-        ResizeMode="NoResize"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
         ShowInTaskbar="False"
         Topmost="True"
-        Background="{StaticResource BackgroundBrush}"
+        ResizeMode="NoResize"
         WindowStartupLocation="Manual"
         Closing="Window_Closing"
         Loaded="Window_Loaded"
@@ -24,101 +25,106 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </Window.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Border x:Name="RootBorder" Background="{DynamicResource BackgroundBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <!-- 头部 -->
-        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="16,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="控制中心" FontSize="16" FontWeight="SemiBold"
-                           Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="&#x2630;" Width="36" Height="36"
-                        Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}"
-                        BorderThickness="0" FontSize="14" Cursor="Hand"
-                        Click="MenuButton_Click">
-                    <Button.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="同步多屏亮度" Click="SyncAll_Click"/>
-                            <Separator/>
-                            <MenuItem Header="重新扫描" Click="Refresh_Click"/>
-                            <Separator/>
-                            <MenuItem Header="退出" Click="Exit_Click"/>
-                        </ContextMenu>
-                    </Button.ContextMenu>
-                </Button>
-            </Grid>
-        </Border>
+            <!-- 头部 -->
+            <Border Grid.Row="0" Background="{DynamicResource SurfaceBrush}" Padding="16,12"
+                    CornerRadius="8,8,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="控制中心" FontSize="16" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="&#x2630;" Width="36" Height="36"
+                            Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}"
+                            BorderThickness="0" FontSize="14" Cursor="Hand"
+                            Click="MenuButton_Click">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="同步多屏亮度" Click="SyncAll_Click"/>
+                                <MenuItem Header="重新扫描" Click="Refresh_Click"/>
+                                <Separator/>
+                                <MenuItem Header="设置" Click="Settings_Click"/>
+                                <Separator/>
+                                <MenuItem Header="退出" Click="Exit_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </Grid>
+            </Border>
 
-        <!-- Loading -->
-        <TextBlock Grid.Row="1" Text="正在扫描显示器..." FontSize="12"
-                   Foreground="{StaticResource TextSecondaryBrush}"
-                   HorizontalAlignment="Center" Margin="0,20,0,0"
-                   Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
+            <!-- Loading -->
+            <TextBlock Grid.Row="1" Text="正在扫描显示器..." FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       HorizontalAlignment="Center" Margin="0,20,0,0"
+                       Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
 
-        <!-- 显示器列表 -->
-        <ItemsControl Grid.Row="2" ItemsSource="{Binding Monitors}" Margin="0,0,0,0">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border Background="{StaticResource SurfaceBrush}" Padding="16,10" Margin="0,0,0,1"
-                            x:Name="MonitorCard">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+            <!-- 显示器列表 -->
+            <ItemsControl Grid.Row="2" ItemsSource="{Binding Monitors}" Margin="0,0,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{DynamicResource SurfaceBrush}" Padding="16,10" Margin="0,0,0,1"
+                                x:Name="MonitorCard">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                            <!-- 名称 + 数值 -->
-                            <Grid Grid.Row="0" Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding DisplayName}" FontSize="13"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding MethodName}" FontSize="10"
-                                               Foreground="{StaticResource AccentBrush}" Margin="0,0,8,0"/>
-                                    <TextBlock Text="{Binding Brightness, StringFormat={}{0}%}" FontSize="14"
-                                               FontWeight="Bold" Foreground="{StaticResource AccentBrush}"
-                                               Width="40" TextAlignment="Right"/>
-                                </StackPanel>
+                                <!-- 名称 + 数值 -->
+                                <Grid Grid.Row="0" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="13"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding MethodName}" FontSize="10"
+                                                   Foreground="{DynamicResource AccentBrush}" Margin="0,0,8,0"/>
+                                        <TextBlock Text="{Binding Brightness, StringFormat={}{0}%}" FontSize="14"
+                                                   FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
+                                                   Width="40" TextAlignment="Right"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 亮度滑条 -->
+                                <Slider Grid.Row="1" Height="30"
+                                        Value="{Binding Brightness, Delay=50}"
+                                        IsEnabled="{Binding IsAdjustable}"
+                                        Style="{StaticResource BrightnessSliderStyle}"
+                                        Tag="{Binding}"
+                                        ValueChanged="Slider_ValueChanged"/>
+
+                                <!-- 状态提示 -->
+                                <TextBlock Grid.Row="2" Text="{Binding StatusText}" FontSize="10"
+                                           Foreground="#FF6B6B" Margin="0,2,4,0"
+                                           Visibility="Collapsed" x:Name="StatusText"/>
                             </Grid>
+                        </Border>
 
-                            <!-- 亮度滑条 -->
-                            <Slider Grid.Row="1" Height="30"
-                                    Value="{Binding Brightness, Delay=50}"
-                                    IsEnabled="{Binding IsAdjustable}"
-                                    Style="{StaticResource BrightnessSliderStyle}"
-                                    Tag="{Binding}"
-                                    ValueChanged="Slider_ValueChanged"/>
-
-                            <!-- 状态提示 -->
-                            <TextBlock Grid.Row="2" Text="{Binding StatusText}" FontSize="10"
-                                       Foreground="#FF6B6B" Margin="0,2,4,0"
-                                       Visibility="Collapsed" x:Name="StatusText"/>
-                        </Grid>
-                    </Border>
-
-                    <DataTemplate.Triggers>
-                        <DataTrigger Binding="{Binding IsAdjustable}" Value="False">
-                            <Setter TargetName="MonitorCard" Property="Opacity" Value="0.5"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding IsAdjustable}" Value="False">
-                            <Setter TargetName="StatusText" Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-                    </DataTemplate.Triggers>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-    </Grid>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsAdjustable}" Value="False">
+                                <Setter TargetName="MonitorCard" Property="Opacity" Value="0.5"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsAdjustable}" Value="False">
+                                <Setter TargetName="StatusText" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </Border>
 </Window>

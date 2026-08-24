@@ -1,15 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- 颜色（深色主题，后续迁移设置后支持深浅切换） -->
-    <SolidColorBrush x:Key="BackgroundBrush" Color="#202020"/>
-    <SolidColorBrush x:Key="SurfaceBrush" Color="#2D2D2D"/>
-    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#C8C8C8"/>
-    <SolidColorBrush x:Key="AccentBrush" Color="#0078D4"/>
-    <SolidColorBrush x:Key="BorderBrush" Color="#3C3C3C"/>
-    <SolidColorBrush x:Key="TrackBrush" Color="#505050"/>
-    <SolidColorBrush x:Key="ThumbBrush" Color="#C8C8C8"/>
+    <!-- 颜色由 Colors.Dark.xaml / Colors.Light.xaml 提供，这里只保留样式 -->
 
     <!-- 亮度滑条样式 -->
     <Style x:Key="BrightnessSliderStyle" TargetType="Slider">
@@ -29,7 +21,7 @@
                                 <RepeatButton Command="Slider.DecreaseLarge" Background="Transparent">
                                     <RepeatButton.Template>
                                         <ControlTemplate TargetType="RepeatButton">
-                                            <Border Height="6" Background="{StaticResource AccentBrush}"
+                                            <Border Height="6" Background="{DynamicResource AccentBrush}"
                                                     CornerRadius="3" VerticalAlignment="Center"/>
                                         </ControlTemplate>
                                     </RepeatButton.Template>
@@ -40,8 +32,8 @@
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Grid>
-                                                <Ellipse Fill="{StaticResource ThumbBrush}" Width="20" Height="20"/>
-                                                <Ellipse Fill="{StaticResource AccentBrush}" Width="10" Height="10"/>
+                                                <Ellipse Fill="{DynamicResource ThumbBrush}" Width="20" Height="20"/>
+                                                <Ellipse Fill="{DynamicResource AccentBrush}" Width="10" Height="10"/>
                                             </Grid>
                                         </ControlTemplate>
                                     </Thumb.Template>
@@ -51,7 +43,7 @@
                                 <RepeatButton Command="Slider.IncreaseLarge" Background="Transparent">
                                     <RepeatButton.Template>
                                         <ControlTemplate TargetType="RepeatButton">
-                                            <Border Height="6" Background="{StaticResource TrackBrush}"
+                                            <Border Height="6" Background="{DynamicResource TrackBrush}"
                                                     CornerRadius="3" VerticalAlignment="Center"/>
                                         </ControlTemplate>
                                     </RepeatButton.Template>
@@ -64,24 +56,24 @@
         </Setter>
     </Style>
 
-    <!-- 托盘右键菜单样式 -->
+    <!-- 托盘右键菜单样式（WinForms 菜单，以下为 WPF ContextMenu 样式） -->
     <Style TargetType="ContextMenu">
-        <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="4"/>
     </Style>
 
     <Style TargetType="MenuItem">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="Padding" Value="8,4"/>
         <Setter Property="FontSize" Value="13"/>
     </Style>
 
     <Style TargetType="Separator">
-        <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="Height" Value="1"/>
         <Setter Property="Margin" Value="4,2"/>
     </Style>
