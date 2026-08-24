@@ -1,58 +1,71 @@
 using System.Runtime.InteropServices;
-using System.Windows.Interop;
 
 namespace BrightnessWpf.Services;
 
 /// <summary>
-/// 全局热键。使用 HwndSource 接收 WM_HOTKEY（WPF 消息泵原生支持，比 WinForms NativeWindow 更可靠）。
+/// 全局热键。用低级键盘钩子（WH_KEYBOARD_LL）监听，与托盘滚轮用的鼠标钩子同机制，
+/// 比 RegisterHotKey + 消息窗口在 WPF 下更可靠。
 /// </summary>
 public sealed class HotkeyService : IDisposable
 {
-    private const int WM_HOTKEY = 0x0312;
-    private const uint MOD_ALT = 0x0001;
-    private const uint MOD_CONTROL = 0x0002;
-    private const uint MOD_SHIFT = 0x0004;
-    private const uint MOD_WIN = 0x0008;
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int VK_CONTROL = 0x11;
+    private const int VK_MENU = 0x12;    // Alt
+    private const int VK_SHIFT = 0x10;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
 
-    private HwndSource? _source;
-    private readonly List<int> _registeredIds = new();
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    /// <summary>热键触发事件，参数为注册时的 ID。</summary>
+    private readonly LowLevelKeyboardProc _proc;
+    private IntPtr _hookId = IntPtr.Zero;
+
+    private uint _incMods, _incKey, _decMods, _decKey;
+    private bool _hasInc, _hasDec;
+
+    /// <summary>热键触发事件，参数 1=提升亮度，2=降低亮度。</summary>
     public event Action<int>? HotkeyPressed;
 
-    /// <summary>注册"提升亮度"和"降低亮度"热键（ID 分别为 1、2）。</summary>
+    public HotkeyService()
+    {
+        _proc = HookCallback;
+    }
+
     public void Start(string hotkeyIncrease, string hotkeyDecrease)
     {
-        _source = new HwndSource(new HwndSourceParameters("HMSimpleBrightnessHotkeyWindow")
-        {
-            Width = 0,
-            Height = 0,
-            WindowStyle = unchecked((int)0x80000000), // WS_POPUP
-            ExtendedWindowStyle = 0x80                // WS_EX_TOOLWINDOW（消息窗口）
-        });
-        _source.AddHook(WndProc);
-        Register(hotkeyIncrease, 1);
-        Register(hotkeyDecrease, 2);
+        _hasInc = TryParse(hotkeyIncrease, out _incMods, out _incKey) && _incKey != 0;
+        _hasDec = TryParse(hotkeyDecrease, out _decMods, out _decKey) && _decKey != 0;
+
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        using var module = process.MainModule;
+        _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _proc, GetModuleHandle(module?.ModuleName ?? "user32"), 0);
     }
 
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (msg == WM_HOTKEY)
+        if (nCode >= 0 && wParam == (IntPtr)WM_KEYDOWN)
         {
-            HotkeyPressed?.Invoke(wParam.ToInt32());
-            handled = true;
+            var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+
+            uint mods = 0;
+            if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) mods |= 0x0002; // Ctrl
+            if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) mods |= 0x0001;    // Alt
+            if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) mods |= 0x0004;   // Shift
+            if ((GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) mods |= 0x0008; // Win
+
+            if (_hasInc && info.vkCode == _incKey && mods == _incMods)
+            {
+                HotkeyPressed?.Invoke(1);
+                return (IntPtr)1; // 吞掉按键，不传给前台应用
+            }
+            if (_hasDec && info.vkCode == _decKey && mods == _decMods)
+            {
+                HotkeyPressed?.Invoke(2);
+                return (IntPtr)1;
+            }
         }
-        return IntPtr.Zero;
-    }
-
-    private bool Register(string hotkeyString, int id)
-    {
-        if (string.IsNullOrWhiteSpace(hotkeyString) || _source == null) return false;
-        if (!TryParse(hotkeyString, out uint mods, out uint key) || key == 0) return false;
-
-        bool ok = RegisterHotKey(_source.Handle, id, mods, key);
-        if (ok) _registeredIds.Add(id);
-        return ok;
+        return CallNextHookEx(_hookId, nCode, wParam, lParam);
     }
 
     private static bool TryParse(string hotkeyString, out uint mods, out uint key)
@@ -68,20 +81,20 @@ public sealed class HotkeyService : IDisposable
                 {
                     case "ctrl":
                     case "control":
-                        mods |= MOD_CONTROL;
+                        mods |= 0x0002;
                         break;
                     case "alt":
-                        mods |= MOD_ALT;
+                        mods |= 0x0001;
                         break;
                     case "shift":
-                        mods |= MOD_SHIFT;
+                        mods |= 0x0004;
                         break;
                     case "win":
                     case "windows":
-                        mods |= MOD_WIN;
+                        mods |= 0x0008;
                         break;
                     default:
-                        key = (uint)Enum.Parse(typeof(FormsKeys), t, true);
+                        key = (uint)Enum.Parse(typeof(HotkeyKeys), t, true);
                         break;
                 }
             }
@@ -93,21 +106,10 @@ public sealed class HotkeyService : IDisposable
         }
     }
 
-    // 避免直接依赖 WinForms 的 Keys，用本地枚举 + 值解析
-    private enum FormsKeys
+    private enum HotkeyKeys
     {
-        F5 = 0x74,
-        F6 = 0x75,
-        F1 = 0x70,
-        F2 = 0x71,
-        F3 = 0x72,
-        F4 = 0x73,
-        F7 = 0x76,
-        F8 = 0x77,
-        F9 = 0x78,
-        F10 = 0x79,
-        F11 = 0x7A,
-        F12 = 0x7B,
+        F1 = 0x70, F2 = 0x71, F3 = 0x72, F4 = 0x73, F5 = 0x74, F6 = 0x75,
+        F7 = 0x76, F8 = 0x77, F9 = 0x78, F10 = 0x79, F11 = 0x7A, F12 = 0x7B,
         A = 0x41, B = 0x42, C = 0x43, D = 0x44, E = 0x45, F = 0x46,
         G = 0x47, H = 0x48, I = 0x49, J = 0x4A, K = 0x4B, L = 0x4C,
         M = 0x4D, N = 0x4E, O = 0x4F, P = 0x50, Q = 0x51, R = 0x52,
@@ -119,20 +121,36 @@ public sealed class HotkeyService : IDisposable
 
     public void Dispose()
     {
-        if (_source != null)
+        if (_hookId != IntPtr.Zero)
         {
-            foreach (int id in _registeredIds)
-                UnregisterHotKey(_source.Handle, id);
-            _registeredIds.Clear();
-            _source.RemoveHook(WndProc);
-            _source.Dispose();
-            _source = null;
+            UnhookWindowsHookEx(_hookId);
+            _hookId = IntPtr.Zero;
         }
     }
 
-    [DllImport("user32.dll")]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string lpModuleName);
 
     [DllImport("user32.dll")]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    private static extern short GetAsyncKeyState(int vKey);
 }

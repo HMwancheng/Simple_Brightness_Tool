@@ -27,8 +27,18 @@ public partial class OsdWindow : Window
         // 定位到鼠标所在屏幕的底部中央（同 Windows 原生 OSD）
         var screen = System.Windows.Forms.Screen.FromPoint(System.Windows.Forms.Control.MousePosition);
         var wa = screen.WorkingArea;
-        Left = wa.Left + (wa.Width - ActualWidth) / 2;
-        Top = wa.Bottom - ActualHeight - 100;
+
+        // Screen.WorkingArea 是物理像素，WPF Left/Top 是 DIP，需按 DPI 缩放换算
+        double scale = 1.0;
+        var source = System.Windows.PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget != null && source.CompositionTarget.TransformToDevice.M11 > 0)
+            scale = source.CompositionTarget.TransformToDevice.M11;
+
+        double waLeftDips = wa.Left / scale;
+        double waWidthDips = wa.Width / scale;
+        double waBottomDips = wa.Bottom / scale;
+        Left = waLeftDips + (waWidthDips - ActualWidth) / 2;
+        Top = waBottomDips - ActualHeight - 100;
 
         _hideTimer.Stop();
         _hideTimer.Start();

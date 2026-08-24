@@ -52,14 +52,12 @@ public partial class MainWindow : Window
         RegisterSystemEvents();
     }
 
-    // 显示器列表加载后窗口会变高，保持窗口不超出屏幕（下边缘锁定在任务栏上方）
+    // 内容变化（变高/变矮）时始终把窗口锚定在右下角，下边缘锁定在任务栏上方
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         var wa = SystemParameters.WorkArea;
-        if (Top + ActualHeight > wa.Bottom)
-            Top = Math.Max(wa.Top, wa.Bottom - ActualHeight - ScreenMargin);
-        if (Left + ActualWidth > wa.Right)
-            Left = Math.Max(wa.Left, wa.Right - ActualWidth - ScreenMargin);
+        Left = Math.Max(wa.Left, wa.Right - ActualWidth - ScreenMargin);
+        Top = Math.Max(wa.Top, wa.Bottom - ActualHeight - ScreenMargin);
     }
 
     // 点击窗口外部时窗口自动隐藏（弹出面板式交互）
@@ -270,6 +268,16 @@ public partial class MainWindow : Window
         _ = _viewModel?.RefreshCommand.ExecuteAsync(null);
 
     private void Settings_Click(object sender, RoutedEventArgs e) => ShowSettings();
+
+    // 编辑曲线（仅 DDC 显示器卡片上显示按钮）
+    private void CurveButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is MonitorViewModel vm && _viewModel != null)
+        {
+            var win = new CurveEditorWindow(vm.Monitor, _viewModel.Config) { Owner = this };
+            win.ShowDialog();
+        }
+    }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => ShutdownApp();
 

@@ -36,7 +36,8 @@
 
             <!-- 头部 -->
             <Border Grid.Row="0" Background="{DynamicResource SurfaceBrush}" Padding="16,12"
-                    CornerRadius="8,8,0,0">
+                    CornerRadius="8,8,0,0" BorderThickness="0,0,0,1.5"
+                    BorderBrush="{DynamicResource BorderBrush}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -79,6 +80,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
                                 <!-- 名称 + 数值 -->
@@ -111,6 +113,12 @@
                                 <TextBlock Grid.Row="2" Text="{Binding StatusText}" FontSize="10"
                                            Foreground="#FF6B6B" Margin="0,2,4,0"
                                            Visibility="Collapsed" x:Name="StatusText"/>
+
+                                <!-- 编辑曲线（仅 DDC 显示器显示） -->
+                                <Button Grid.Row="3" Content="编辑曲线" Width="88" Height="28"
+                                        Margin="0,6,0,0" HorizontalAlignment="Left" FontSize="12"
+                                        Cursor="Hand" Tag="{Binding}" Click="CurveButton_Click"
+                                        Visibility="{Binding IsDdc, Converter={StaticResource BoolToVis}}"/>
                             </Grid>
                         </Border>
 

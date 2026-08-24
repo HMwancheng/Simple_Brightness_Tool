@@ -21,6 +21,7 @@ public partial class MonitorViewModel : ObservableObject
 
     public string DisplayName => Monitor.Name;
     public string UniqueId => Monitor.UniqueId;
+    public bool IsDdc => Monitor.Type == MonitorType.DDC;
 
     public MonitorViewModel(MonitorInfo monitor)
     {
