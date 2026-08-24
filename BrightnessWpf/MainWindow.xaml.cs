@@ -3,8 +3,10 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using Forms = System.Windows.Forms;
+using BrightnessWpf.Models;
 using BrightnessWpf.Services;
 using BrightnessWpf.ViewModels;
+using Microsoft.Win32;
 
 namespace BrightnessWpf;
 
@@ -14,11 +16,17 @@ namespace BrightnessWpf;
 /// </summary>
 public partial class MainWindow : Window
 {
+    // 窗口距屏幕右/下边缘的距离（基于 WorkArea，自动适配任务栏位置）
+    private const double ScreenMargin = 5;
+
     private Forms.NotifyIcon? _trayIcon;
     private MainViewModel? _viewModel;
     private MouseHook? _mouseHook;
+    private HotkeyService? _hotkeyService;
+    private OsdWindow? _osdWindow;
     private bool _isShuttingDown;
     private bool _menuOpen;
+    private bool _reloading;
     private IntPtr _trayIconHandle = IntPtr.Zero;
     private uint _trayIconId;
 
@@ -29,10 +37,10 @@ public partial class MainWindow : Window
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        // 定位到屏幕右下角
+        // 定位到屏幕右下角，右/下边缘距离一致
         var workArea = SystemParameters.WorkArea;
-        Left = workArea.Right - Width - 10;
-        Top = workArea.Bottom - Height - 10;
+        Left = workArea.Right - Width - ScreenMargin;
+        Top = workArea.Bottom - Height - ScreenMargin;
 
         _viewModel = new MainViewModel();
         DataContext = _viewModel;
@@ -40,6 +48,8 @@ public partial class MainWindow : Window
 
         SetupTrayIcon();
         SetupMouseWheelHook();
+        SetupHotkeys();
+        RegisterSystemEvents();
     }
 
     // 显示器列表加载后窗口会变高，保持窗口不超出屏幕（下边缘锁定在任务栏上方）
@@ -47,9 +57,9 @@ public partial class MainWindow : Window
     {
         var wa = SystemParameters.WorkArea;
         if (Top + ActualHeight > wa.Bottom)
-            Top = Math.Max(wa.Top, wa.Bottom - ActualHeight - 10);
+            Top = Math.Max(wa.Top, wa.Bottom - ActualHeight - ScreenMargin);
         if (Left + ActualWidth > wa.Right)
-            Left = Math.Max(wa.Left, wa.Right - ActualWidth - 10);
+            Left = Math.Max(wa.Left, wa.Right - ActualWidth - ScreenMargin);
     }
 
     // 点击窗口外部时窗口自动隐藏（弹出面板式交互）
@@ -126,9 +136,85 @@ public partial class MainWindow : Window
         _mouseHook.MouseWheel += (s, delta) =>
         {
             if (IsMouseOverTrayIcon())
+            {
                 _viewModel?.AdjustAllByStep(delta);
+                if (!IsVisible) ShowOsd();
+            }
         };
         _mouseHook.Install();
+    }
+
+    // 全局热键：Ctrl+F5 提升亮度，Ctrl+F6 降低亮度
+    private void SetupHotkeys()
+    {
+        if (_viewModel == null) return;
+        _hotkeyService = new HotkeyService();
+        _hotkeyService.HotkeyPressed += id =>
+        {
+            _viewModel.AdjustAllByStep(id == 1 ? 1 : -1);
+            if (!IsVisible) ShowOsd();
+        };
+        _hotkeyService.Register(_viewModel.HotkeyIncrease, 1);
+        _hotkeyService.Register(_viewModel.HotkeyDecrease, 2);
+    }
+
+    // 系统事件：唤醒/解锁/显示变更 → 重新扫描显示器（合并并发 + 延迟，避免卡顿）
+    private void RegisterSystemEvents()
+    {
+        SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
+        SystemEvents.SessionSwitch += SystemEvents_SessionSwitch;
+        SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+    }
+
+    private void UnregisterSystemEvents()
+    {
+        SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
+        SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
+        SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
+    }
+
+    private void SystemEvents_PowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume)
+            Dispatcher.InvokeAsync(() => ReloadMonitorsDelayed(2000));
+    }
+
+    private void SystemEvents_SessionSwitch(object? sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect)
+            Dispatcher.InvokeAsync(() => ReloadMonitorsDelayed(2000));
+    }
+
+    private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        Dispatcher.InvokeAsync(() => ReloadMonitorsDelayed(0));
+    }
+
+    private async void ReloadMonitorsDelayed(int delayMs)
+    {
+        if (_reloading) return;
+        _reloading = true;
+        try
+        {
+            if (delayMs > 0) await Task.Delay(delayMs);
+            await (_viewModel?.RefreshCommand.ExecuteAsync(null) ?? Task.CompletedTask);
+        }
+        finally
+        {
+            _reloading = false;
+        }
+    }
+
+    // OSD 亮度弹层（热键/托盘滚轮调节时显示）
+    private void ShowOsd()
+    {
+        var items = _viewModel?.Monitors
+            .Where(vm => vm.IsAdjustable)
+            .Select(vm => new OsdItem { Brightness = vm.Brightness })
+            .ToList();
+        if (items == null || items.Count == 0) return;
+        _osdWindow ??= new OsdWindow();
+        _osdWindow.ShowOsd(items);
     }
 
     // 滑块变化 → 立即同步 VM 并调节亮度
@@ -168,7 +254,10 @@ public partial class MainWindow : Window
         _isShuttingDown = true;
         _viewModel?.SaveSettings();
         _mouseHook?.Dispose();
+        _hotkeyService?.Dispose();
+        _osdWindow?.Close();
         _trayIcon?.Dispose();
+        UnregisterSystemEvents();
         System.Windows.Application.Current.Shutdown();
     }
 
@@ -191,7 +280,10 @@ public partial class MainWindow : Window
     {
         _viewModel?.SaveSettings();
         _mouseHook?.Dispose();
+        _hotkeyService?.Dispose();
+        _osdWindow?.Close();
         _trayIcon?.Dispose();
+        UnregisterSystemEvents();
         base.OnClosed(e);
     }
 

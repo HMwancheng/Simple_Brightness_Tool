@@ -17,6 +17,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLoading;
 
+    public string HotkeyIncrease => _config.HotkeyIncrease;
+    public string HotkeyDecrease => _config.HotkeyDecrease;
+
     public MainViewModel()
     {
         _config = AppConfig.Load();
