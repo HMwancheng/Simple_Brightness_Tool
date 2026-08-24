@@ -1,7 +1,7 @@
 using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Forms;
+using Forms = System.Windows.Forms;
 using BrightnessWpf.ViewModels;
 
 namespace BrightnessWpf;
@@ -12,7 +12,7 @@ namespace BrightnessWpf;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private NotifyIcon? _trayIcon;
+    private Forms.NotifyIcon? _trayIcon;
     private MainViewModel? _viewModel;
     private bool _isShuttingDown;
 
@@ -54,31 +54,31 @@ public partial class MainWindow : Window
             trayIcon = stream != null ? new Icon(stream) : SystemIcons.Application;
         }
 
-        _trayIcon = new NotifyIcon
+        _trayIcon = new Forms.NotifyIcon
         {
             Icon = trayIcon,
             Text = "HM's Simple Brightness Tool",
             Visible = true
         };
 
-        var menu = new ContextMenuStrip();
+        var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("显示主窗口", null, (s, e) => ShowAndActivate());
-        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("同步多屏亮度", null, (s, e) => _ = _viewModel?.SyncAllCommand.ExecuteAsync(null));
         menu.Items.Add("重新扫描", null, (s, e) => _ = _viewModel?.RefreshCommand.ExecuteAsync(null));
-        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (s, e) => ShutdownApp());
         _trayIcon.ContextMenuStrip = menu;
 
         // 左键切换主窗口，中键同步亮度
         _trayIcon.MouseUp += (s, e) =>
         {
-            if (e.Button == MouseButtons.Left)
+            if (e.Button == Forms.MouseButtons.Left)
             {
                 if (IsVisible) Hide();
                 else ShowAndActivate();
             }
-            else if (e.Button == MouseButtons.Middle)
+            else if (e.Button == Forms.MouseButtons.Middle)
             {
                 _ = _viewModel?.SyncAllCommand.ExecuteAsync(null);
             }
@@ -99,7 +99,7 @@ public partial class MainWindow : Window
     // 右上角菜单按钮 → 弹出菜单
     private void MenuButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.ContextMenu != null)
+        if (sender is System.Windows.Controls.Button btn && btn.ContextMenu != null)
         {
             btn.ContextMenu.PlacementTarget = btn;
             btn.ContextMenu.IsOpen = true;

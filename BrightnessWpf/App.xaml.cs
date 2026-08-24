@@ -5,7 +5,7 @@ namespace BrightnessWpf;
 /// <summary>
 /// 应用入口。
 /// </summary>
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
