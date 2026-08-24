@@ -26,7 +26,7 @@ public static class ThemeManager
             Source = new Uri($"Resources/Colors.{(IsDark ? "Dark" : "Light")}.xaml", UriKind.Relative)
         };
 
-        var merged = Application.Current.Resources.MergedDictionaries;
+        var merged = System.Windows.Application.Current.Resources.MergedDictionaries;
         int colorIdx = -1;
         for (int i = 0; i < merged.Count; i++)
         {
