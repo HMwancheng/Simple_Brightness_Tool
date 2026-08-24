@@ -29,11 +29,17 @@ public partial class MainWindow : Window
 
     private void SetupTrayIcon()
     {
-        // 单文件发布下 Assembly.Location 为空，改用 ProcessPath 从运行中的 exe 自提取图标
-        string exePath = Environment.ProcessPath ?? "BrightnessWpf.exe";
+        // 从内嵌资源加载托盘图标（单文件发布下 Assembly.Location/ExtractAssociatedIcon 不可靠）
+        System.Drawing.Icon trayIcon;
+        using (var stream = System.Reflection.Assembly.GetExecutingAssembly()
+                   .GetManifestResourceStream("BrightnessWpf.Resources.Icon_Tray_Hybrid.ico"))
+        {
+            trayIcon = stream != null ? new System.Drawing.Icon(stream) : System.Drawing.SystemIcons.Application;
+        }
+
         _trayIcon = new TaskbarIcon
         {
-            Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath),
+            Icon = trayIcon,
             ToolTipText = "HM's Simple Brightness Tool",
             Visibility = Visibility.Visible
         };
