@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using Forms = System.Windows.Forms;
-using BrightnessWpf.Models;
 using BrightnessWpf.Services;
 using BrightnessWpf.ViewModels;
 using Microsoft.Win32;
@@ -225,16 +224,13 @@ public partial class MainWindow : Window
         }
     }
 
-    // OSD 亮度弹层（热键/托盘滚轮调节时显示）
+    // OSD 亮度弹层（热键/托盘滚轮调节时显示，单条 Win11 音量条样式，取第一台可调显示器）
     private void ShowOsd()
     {
-        var items = _viewModel?.Monitors
-            .Where(vm => vm.IsAdjustable)
-            .Select(vm => new OsdItem { Brightness = vm.Brightness })
-            .ToList();
-        if (items == null || items.Count == 0) return;
+        var first = _viewModel?.Monitors.FirstOrDefault(vm => vm.IsAdjustable);
+        if (first == null) return;
         _osdWindow ??= new OsdWindow();
-        _osdWindow.ShowOsd(items);
+        _osdWindow.ShowOsd(first.Brightness);
     }
 
     // 滑块变化 → 立即同步 VM 并调节亮度

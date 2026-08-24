@@ -40,6 +40,8 @@ public sealed class HotkeyService : IDisposable
         using var process = System.Diagnostics.Process.GetCurrentProcess();
         using var module = process.MainModule;
         _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _proc, GetModuleHandle(module?.ModuleName ?? "user32"), 0);
+
+        Log($"Start: inc={hotkeyIncrease}(has={_hasInc},mods={_incMods:X},key={_incKey:X}) dec={hotkeyDecrease}(has={_hasDec},mods={_decMods:X},key={_decKey:X}) hook={_hookId}");
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -54,18 +56,33 @@ public sealed class HotkeyService : IDisposable
             if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) mods |= 0x0004;   // Shift
             if ((GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) mods |= 0x0008; // Win
 
+            Log($"KeyDown vk={info.vkCode:X} mods={mods:X}");
+
             if (_hasInc && info.vkCode == _incKey && mods == _incMods)
             {
+                Log("MATCH increase");
                 HotkeyPressed?.Invoke(1);
                 return (IntPtr)1; // 吞掉按键，不传给前台应用
             }
             if (_hasDec && info.vkCode == _decKey && mods == _decMods)
             {
+                Log("MATCH decrease");
                 HotkeyPressed?.Invoke(2);
                 return (IntPtr)1;
             }
         }
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
+    }
+
+    private static void Log(string msg)
+    {
+        try
+        {
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(AppContext.BaseDirectory, "hotkey_debug.log"),
+                $"{DateTime.Now:HH:mm:ss.fff} {msg}\r\n");
+        }
+        catch { }
     }
 
     private static bool TryParse(string hotkeyString, out uint mods, out uint key)

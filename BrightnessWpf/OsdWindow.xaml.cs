@@ -1,11 +1,10 @@
 using System.Windows;
 using System.Windows.Threading;
-using BrightnessWpf.Models;
 
 namespace BrightnessWpf;
 
 /// <summary>
-/// OSD 亮度弹层。迁移自原版 NativeOsdForm：无边框置顶、显示在鼠标所在屏幕底部中央、约 2 秒后自动隐藏。
+/// OSD 亮度弹层：Win11 原生音量条样式的紧凑药丸条，显示在鼠标所在屏幕底部中央，约 2 秒后自动隐藏。
 /// </summary>
 public partial class OsdWindow : Window
 {
@@ -18,9 +17,10 @@ public partial class OsdWindow : Window
         _hideTimer.Tick += (s, e) => { _hideTimer.Stop(); Hide(); };
     }
 
-    public void ShowOsd(IEnumerable<OsdItem> items)
+    public void ShowOsd(int brightness)
     {
-        OsdList.ItemsSource = items;
+        TrackBar.Value = brightness;
+        ValueText.Text = brightness.ToString();
         if (!IsVisible) Show();
         UpdateLayout();
 
@@ -38,7 +38,7 @@ public partial class OsdWindow : Window
         double waWidthDips = wa.Width / scale;
         double waBottomDips = wa.Bottom / scale;
         Left = waLeftDips + (waWidthDips - ActualWidth) / 2;
-        Top = waBottomDips - ActualHeight - 100;
+        Top = waBottomDips - ActualHeight - 90;
 
         _hideTimer.Stop();
         _hideTimer.Start();

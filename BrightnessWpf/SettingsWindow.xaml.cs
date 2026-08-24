@@ -1,14 +1,18 @@
 using System.Windows;
+using System.Windows.Input;
 using BrightnessWpf.Models;
 
 namespace BrightnessWpf;
 
 /// <summary>
-/// 设置窗口：主题 / 步长 / 去抖 / 热键 / 电源模式。直接修改共享的 AppConfig。
+/// 设置窗口：主题 / 步长 / 去抖 / 热键（点击后按键录入）/ 电源模式。直接修改共享的 AppConfig。
 /// </summary>
 public partial class SettingsWindow : Window
 {
     private readonly AppConfig _config;
+    private int _capturing; // 0=无 1=增加 2=降低
+    private string _hotkeyIncrease = "Ctrl+F5";
+    private string _hotkeyDecrease = "Ctrl+F6";
 
     public bool Saved { get; private set; }
 
@@ -23,11 +27,63 @@ public partial class SettingsWindow : Window
 
         StepBox.Text = config.ScrollStep.ToString();
         DebounceBox.Text = config.DebounceTime.ToString();
-        HotkeyIncBox.Text = config.HotkeyIncrease;
-        HotkeyDecBox.Text = config.HotkeyDecrease;
+
+        _hotkeyIncrease = config.HotkeyIncrease;
+        _hotkeyDecrease = config.HotkeyDecrease;
+        HotkeyIncButton.Content = _hotkeyIncrease;
+        HotkeyDecButton.Content = _hotkeyDecrease;
 
         PowerModeCombo.ItemsSource = new[] { "待机", "关机" };
         PowerModeCombo.SelectedIndex = config.PowerOffMode == 5 ? 1 : 0;
+    }
+
+    private void HotkeyIncButton_Click(object sender, RoutedEventArgs e)
+    {
+        _capturing = 1;
+        HotkeyIncButton.Content = "请按组合键...";
+    }
+
+    private void HotkeyDecButton_Click(object sender, RoutedEventArgs e)
+    {
+        _capturing = 2;
+        HotkeyDecButton.Content = "请按组合键...";
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        if (_capturing != 0)
+        {
+            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+            // 忽略纯修饰键
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt
+                or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            var mods = new List<string>();
+            if ((Keyboard.Modifiers & ModifierKeys.Control) != 0) mods.Add("Ctrl");
+            if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) mods.Add("Alt");
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) mods.Add("Shift");
+            if ((Keyboard.Modifiers & ModifierKeys.Windows) != 0) mods.Add("Win");
+
+            string combo = string.Join("+", mods.Concat(new[] { key.ToString() }));
+            if (_capturing == 1)
+            {
+                _hotkeyIncrease = combo;
+                HotkeyIncButton.Content = combo;
+            }
+            else
+            {
+                _hotkeyDecrease = combo;
+                HotkeyDecButton.Content = combo;
+            }
+            _capturing = 0;
+            e.Handled = true;
+            return;
+        }
+        base.OnPreviewKeyDown(e);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
@@ -46,8 +102,8 @@ public partial class SettingsWindow : Window
         _config.ThemeMode = (ThemeMode)ThemeCombo.SelectedIndex;
         _config.ScrollStep = step;
         _config.DebounceTime = debounce;
-        _config.HotkeyIncrease = HotkeyIncBox.Text.Trim();
-        _config.HotkeyDecrease = HotkeyDecBox.Text.Trim();
+        _config.HotkeyIncrease = _hotkeyIncrease;
+        _config.HotkeyDecrease = _hotkeyDecrease;
         _config.PowerOffMode = PowerModeCombo.SelectedIndex == 1 ? 5 : 4;
         _config.Save();
 
