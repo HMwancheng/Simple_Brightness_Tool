@@ -16,6 +16,7 @@
         WindowStartupLocation="Manual"
         Closing="Window_Closing"
         Loaded="Window_Loaded"
+        SizeChanged="Window_SizeChanged"
         d:DataContext="{d:DesignInstance vm:MainViewModel}">
 
     <Window.Resources>

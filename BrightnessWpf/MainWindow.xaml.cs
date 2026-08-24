@@ -1,16 +1,18 @@
+using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Forms;
 using BrightnessWpf.ViewModels;
-using H.NotifyIcon;
 
 namespace BrightnessWpf;
 
 /// <summary>
 /// 主窗口。迁移第 2 步：接入显示器检测与亮度控制。
+/// 托盘用 WinForms NotifyIcon（H.NotifyIcon 在单文件发布下无法创建托盘图标）。
 /// </summary>
 public partial class MainWindow : Window
 {
-    private TaskbarIcon? _trayIcon;
+    private NotifyIcon? _trayIcon;
     private MainViewModel? _viewModel;
     private bool _isShuttingDown;
 
@@ -26,59 +28,70 @@ public partial class MainWindow : Window
         Left = workArea.Right - Width - 10;
         Top = workArea.Bottom - Height - 10;
 
-        SetupTrayIcon();
-
         _viewModel = new MainViewModel();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
+
+        SetupTrayIcon();
+    }
+
+    // 显示器列表加载后窗口会变高，保持窗口不超出屏幕（下边缘锁定在任务栏上方）
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var wa = SystemParameters.WorkArea;
+        if (Top + ActualHeight > wa.Bottom)
+            Top = Math.Max(wa.Top, wa.Bottom - ActualHeight - 10);
+        if (Left + ActualWidth > wa.Right)
+            Left = Math.Max(wa.Left, wa.Right - ActualWidth - 10);
     }
 
     private void SetupTrayIcon()
     {
-        // 从内嵌资源加载托盘图标（单文件发布下 Assembly.Location/ExtractAssociatedIcon 不可靠）
-        System.Drawing.Icon trayIcon;
+        Icon trayIcon;
         using (var stream = System.Reflection.Assembly.GetExecutingAssembly()
                    .GetManifestResourceStream("BrightnessWpf.Resources.Icon_Tray_Hybrid.ico"))
         {
-            trayIcon = stream != null ? new System.Drawing.Icon(stream) : System.Drawing.SystemIcons.Application;
+            trayIcon = stream != null ? new Icon(stream) : SystemIcons.Application;
         }
 
-        _trayIcon = new TaskbarIcon
+        _trayIcon = new NotifyIcon
         {
             Icon = trayIcon,
-            ToolTipText = "HM's Simple Brightness Tool",
-            Visibility = Visibility.Visible
+            Text = "HM's Simple Brightness Tool",
+            Visible = true
         };
 
-        _trayIcon.TrayLeftMouseDown += (s, e) =>
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("显示主窗口", null, (s, e) => ShowAndActivate());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("同步多屏亮度", null, (s, e) => _ = _viewModel?.SyncAllCommand.ExecuteAsync(null));
+        menu.Items.Add("重新扫描", null, (s, e) => _ = _viewModel?.RefreshCommand.ExecuteAsync(null));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("退出", null, (s, e) => ShutdownApp());
+        _trayIcon.ContextMenuStrip = menu;
+
+        // 左键切换主窗口，中键同步亮度
+        _trayIcon.MouseUp += (s, e) =>
         {
-            if (IsVisible)
-                Hide();
-            else
-                ShowAndActivate();
+            if (e.Button == MouseButtons.Left)
+            {
+                if (IsVisible) Hide();
+                else ShowAndActivate();
+            }
+            else if (e.Button == MouseButtons.Middle)
+            {
+                _ = _viewModel?.SyncAllCommand.ExecuteAsync(null);
+            }
         };
-
-        var contextMenu = new ContextMenu();
-        contextMenu.Style = (Style)FindResource(typeof(ContextMenu));
-
-        var showItem = new MenuItem { Header = "显示主窗口" };
-        showItem.Click += (s, e) => ShowAndActivate();
-        contextMenu.Items.Add(showItem);
-
-        contextMenu.Items.Add(new Separator());
-
-        var exitItem = new MenuItem { Header = "退出" };
-        exitItem.Click += (s, e) => ShutdownApp();
-        contextMenu.Items.Add(exitItem);
-
-        _trayIcon.ContextMenu = contextMenu;
     }
 
-    // 滑块变化 → 调节亮度
+    // 滑块变化 → 立即同步 VM 并调节亮度
     private void Slider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (sender is Slider slider && slider.Tag is MonitorViewModel vm)
         {
+            // 用滑块当前值立即写入 VM，避免绑定 Delay 导致读到上一拍的值（否则调节总是延后一拍）
+            vm.Brightness = (int)e.NewValue;
             _ = _viewModel?.SetBrightnessCommand.ExecuteAsync(vm);
         }
     }
@@ -106,7 +119,7 @@ public partial class MainWindow : Window
         _isShuttingDown = true;
         _viewModel?.SaveSettings();
         _trayIcon?.Dispose();
-        Application.Current.Shutdown();
+        System.Windows.Application.Current.Shutdown();
     }
 
     private void ShowAndActivate()
