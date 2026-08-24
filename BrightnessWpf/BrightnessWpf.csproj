@@ -14,6 +14,8 @@
 
   <ItemGroup>
     <PackageReference Include="H.NotifyIcon.Wpf" Version="2.1.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
   <!-- 内嵌托盘图标为资源（单文件发布下可靠加载） -->

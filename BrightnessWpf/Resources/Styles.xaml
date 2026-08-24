@@ -8,6 +8,61 @@
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#C8C8C8"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#0078D4"/>
     <SolidColorBrush x:Key="BorderBrush" Color="#3C3C3C"/>
+    <SolidColorBrush x:Key="TrackBrush" Color="#505050"/>
+    <SolidColorBrush x:Key="ThumbBrush" Color="#C8C8C8"/>
+
+    <!-- 亮度滑条样式 -->
+    <Style x:Key="BrightnessSliderStyle" TargetType="Slider">
+        <Setter Property="Minimum" Value="0"/>
+        <Setter Property="Maximum" Value="100"/>
+        <Setter Property="SmallChange" Value="1"/>
+        <Setter Property="LargeChange" Value="5"/>
+        <Setter Property="IsSnapToTickEnabled" Value="True"/>
+        <Setter Property="TickFrequency" Value="1"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Height="{TemplateBinding Height}">
+                        <Track x:Name="PART_Track" VerticalAlignment="Center">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Background="Transparent">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="6" Background="{StaticResource AccentBrush}"
+                                                    CornerRadius="3" VerticalAlignment="Center"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Width="20" Height="20" VerticalAlignment="Center">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Grid>
+                                                <Ellipse Fill="{StaticResource ThumbBrush}" Width="20" Height="20"/>
+                                                <Ellipse Fill="{StaticResource AccentBrush}" Width="10" Height="10"/>
+                                            </Grid>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Background="Transparent">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Height="6" Background="{StaticResource TrackBrush}"
+                                                    CornerRadius="3" VerticalAlignment="Center"/>
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <!-- 托盘右键菜单样式 -->
     <Style TargetType="ContextMenu">
