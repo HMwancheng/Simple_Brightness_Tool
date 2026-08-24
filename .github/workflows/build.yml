@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    branches: [ "GMN", "TR-CG" ]
+    branches: [ "GMN", "TR-CG", "wpf-migration" ]
   workflow_dispatch:
 
 # 必须赋予写权限才能创建 Release
@@ -38,16 +38,27 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
 
-    # 5. 编译生成 EXE (始终执行)
-    - name: Publish (Build EXE)
-      run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o build_output
+    # 5. 编译生成 WinForms EXE (始终执行)
+    - name: Publish WinForms (Build EXE)
+      run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o build_output/winforms
 
-    # 6. 上传 Artifact (始终执行，作为普通 Action 产物)
-    - name: Upload Artifact
+    # 6. 上传 WinForms Artifact (始终执行，作为普通 Action 产物)
+    - name: Upload WinForms Artifact
       uses: actions/upload-artifact@v4
       with:
         name: SimpleBrightnessTool
-        path: build_output/*.exe
+        path: build_output/winforms/*.exe
+
+    # 6b. 编译 WPF 迁移版 (wpf-migration 分支，始终执行)
+    - name: Publish WPF (Build EXE)
+      run: dotnet publish BrightnessWpf/BrightnessWpf.csproj -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o build_output/wpf
+
+    # 6c. 上传 WPF Artifact
+    - name: Upload WPF Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: BrightnessWpf
+        path: build_output/wpf/*.exe
 
     # 7. 生成版本号 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
     # 使用时间戳作为版本号，例如 v2025.01.01.1230

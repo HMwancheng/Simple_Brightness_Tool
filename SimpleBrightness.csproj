@@ -30,4 +30,12 @@
     <EmbeddedResource Include="app.ico\Icon_Tray_Minimalist.ico" />
     <EmbeddedResource Include="app.ico\Icon_Tray_Transparent.ico" />
   </ItemGroup>
+
+  <!-- 排除独立的 WPF 迁移项目目录，避免干扰 WinForms 编译 -->
+  <ItemGroup>
+    <Compile Remove="BrightnessWpf\**" />
+    <Page Remove="BrightnessWpf\**" />
+    <EmbeddedResource Remove="BrightnessWpf\**" />
+    <None Remove="BrightnessWpf\**" />
+  </ItemGroup>
 </Project>
