@@ -29,10 +29,11 @@ public partial class MainWindow : Window
 
     private void SetupTrayIcon()
     {
+        // 单文件发布下 Assembly.Location 为空，改用 ProcessPath 从运行中的 exe 自提取图标
+        string exePath = Environment.ProcessPath ?? "BrightnessWpf.exe";
         _trayIcon = new TaskbarIcon
         {
-            Icon = System.Drawing.Icon.ExtractAssociatedIcon(
-                System.Reflection.Assembly.GetExecutingAssembly().Location),
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath),
             ToolTipText = "HM's Simple Brightness Tool",
             Visibility = Visibility.Visible
         };
