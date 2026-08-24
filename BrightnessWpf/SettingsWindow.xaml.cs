@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using BrightnessWpf.Models;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace BrightnessWpf;
 
