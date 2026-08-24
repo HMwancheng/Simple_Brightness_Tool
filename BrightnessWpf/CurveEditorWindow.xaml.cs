@@ -6,6 +6,9 @@ using System.Windows.Shapes;
 using BrightnessWpf.Models;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using Point = System.Windows.Point;
+using Cursors = System.Windows.Input.Cursors;
+using Color = System.Windows.Media.Color;
+using Brush = System.Windows.Media.Brush;
 
 namespace BrightnessWpf;
 
