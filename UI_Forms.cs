@@ -967,7 +967,8 @@ namespace SimpleBrightness
                         string valText = brightness.ToString();
                         Size valTextSize = TextRenderer.MeasureText(valText, valFont);
                         int valDrawX = valX + (valWidth - valTextSize.Width) / 2;  // Center in valWidth
-                        int valDrawY = centerY - valTextSize.Height / 2;  // Vertically center with bar
+                        // TextRenderer 的字形基线偏低，向上补偿 1 DIP（150% 下即 2px）与滑块中心对齐
+                        int valDrawY = centerY - valTextSize.Height / 2 - S(1);
                         TextRenderer.DrawText(g, valText, valFont, new Point(valDrawX, valDrawY), _textColor);
                     }
                 }
