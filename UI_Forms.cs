@@ -2321,6 +2321,7 @@ namespace SimpleBrightness
                     _points.Remove(oldX);
                     _points[newX] = newY;
                     _selectedPoint = newX;
+                    _hoveredPoint = newX;
                     
                     PointSelected?.Invoke(newX, newY);
                     this.Invalidate();

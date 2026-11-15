@@ -241,10 +241,26 @@ namespace SimpleBrightness
             SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
         }
         private async void SystemEvents_PowerModeChanged(object? sender, PowerModeChangedEventArgs e) {
-            if (e.Mode == PowerModes.Resume) { await Task.Delay(2000); ReloadMonitorsSafe(); }
+            if (e.Mode == PowerModes.Resume) {
+                await Task.Delay(2000);
+                // 唤醒后低层鼠标钩子可能被系统移除，重新安装
+                RunOnUi(ReinstallMouseHook);
+                ReloadMonitorsSafe();
+            }
         }
         private async void SystemEvents_SessionSwitch(object? sender, SessionSwitchEventArgs e) {
-            if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect) { await Task.Delay(2000); ReloadMonitorsSafe(); }
+            if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect) {
+                await Task.Delay(2000);
+                RunOnUi(ReinstallMouseHook);
+                ReloadMonitorsSafe();
+            }
+        }
+
+        private void ReinstallMouseHook() {
+            try {
+                mouseHook?.Uninstall();
+                mouseHook?.Install();
+            } catch { }
         }
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) {
             // 分辨率/缩放变化后托盘图标尺寸与位置都可能变
@@ -610,7 +626,10 @@ namespace SimpleBrightness
                 int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
                 ApplyBrightness(m, newVal, true, false);
             }
-            ShowUnifiedOsd();
+
+            // 主窗口可见时已经在更新滑块，不再重复弹 OSD
+            bool mainVisible = Application.OpenForms.OfType<BrightnessForm>().Any(f => f != null && f.Visible && !f.IsDisposed);
+            if (!mainVisible) ShowUnifiedOsd();
         }
 
         // 只读缓存，不做任何 Shell IPC（真正的查询在后台线程里做）
