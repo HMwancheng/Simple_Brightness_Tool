@@ -353,9 +353,10 @@ namespace SimpleBrightness
         private Rectangle _trackRect;
         private Rectangle _thumbRect;
         // 按当前 DPI 换算绘制常量（控件本身的尺寸由 WinForms 自动缩放）
-        private int ThumbOuterSize => S(24);
-        private int ThumbInnerSize => S(14);
-        private int TrackHeight => S(6);
+        // 基础数值回到原始设计尺寸，避免叠加 DPI 缩放后偏大
+        private int ThumbOuterSize => S(20);
+        private int ThumbInnerSize => S(10);
+        private int TrackHeight => S(5);
         private int S(int px) => (int)Math.Round(px * DeviceDpi / 96f);
         
         public event EventHandler? ValueChanged;
@@ -463,9 +464,10 @@ namespace SimpleBrightness
             }
             
             // Inner circle (system accent color)
-            int innerX = _thumbRect.X + (_thumbRect.Width - ThumbInnerSize) / 2;
-            int innerY = _thumbRect.Y + (_thumbRect.Height - ThumbInnerSize) / 2;
-            var innerRect = new Rectangle(innerX, innerY, ThumbInnerSize, ThumbInnerSize);
+            // 用浮点坐标居中，避免奇数像素差导致两个圆看起来不同心
+            float innerX = _thumbRect.X + (_thumbRect.Width - ThumbInnerSize) / 2f;
+            float innerY = _thumbRect.Y + (_thumbRect.Height - ThumbInnerSize) / 2f;
+            var innerRect = new RectangleF(innerX, innerY, ThumbInnerSize, ThumbInnerSize);
             using (var innerBrush = new SolidBrush(ThemeManager.Accent))
             using (var innerPath = GetCirclePath(innerRect))
             {
@@ -485,7 +487,7 @@ namespace SimpleBrightness
             return path;
         }
         
-        private GraphicsPath GetCirclePath(Rectangle rect)
+        private GraphicsPath GetCirclePath(RectangleF rect)
         {
             var path = new GraphicsPath();
             path.AddEllipse(rect);
@@ -799,13 +801,14 @@ namespace SimpleBrightness
         private void ApplyLayoutForScreen(Screen screen)
         {
             _scale = DpiUtil.Scale(screen);
-            int itemHeight = S(6) + S(24);   // 与 OnPaint 中的 itemHeight 保持一致
-            int monitorGap = S(16);
-            int padding = S(20);
-            int width = S(290);
+            // 基础尺寸已回落到 96 DPI 设计值，实际大小由 _scale 换算
+            int itemHeight = S(5) + S(20);   // 与 OnPaint 中的 itemHeight 保持一致
+            int monitorGap = S(12);
+            int padding = S(16);
+            int width = S(240);
             int count = Math.Max(1, _monitors.Count);
             int contentHeight = count * itemHeight + Math.Max(0, count - 1) * monitorGap;
-            int height = Math.Max(S(100), contentHeight + padding * 2);
+            int height = Math.Max(S(90), contentHeight + padding * 2);
             this.Size = new Size(width, height);
         }
 
@@ -901,13 +904,13 @@ namespace SimpleBrightness
             if (_monitors.Count == 0) return;
             
             // Auto-calculate layout with equal margins（全部按屏幕 DPI 换算）
-            int barHeight = S(6);            // Progress bar height
-            int margin = S(20);              // Equal margin on left and right
-            int leftIconPadding = S(6);      // Extra padding on left of icon
-            int elementGap = S(12);          // Gap between icon/bar/value
-            int iconWidth = S(24);           // Width allocated for icon
-            int monitorGap = S(16);          // Gap between monitors
-            int valWidth = S(36);            // Width for value text
+            int barHeight = S(5);            // Progress bar height
+            int margin = S(16);              // Equal margin on left and right
+            int leftIconPadding = S(5);      // Extra padding on left of icon
+            int elementGap = S(10);          // Gap between icon/bar/value
+            int iconWidth = S(20);           // Width allocated for icon
+            int monitorGap = S(12);          // Gap between monitors
+            int valWidth = S(30);            // Width for value text
             
             // Calculate available width with equal left/right margins
             int availableContentWidth = this.Width - (margin * 2);
@@ -915,13 +918,13 @@ namespace SimpleBrightness
             int barWidth = availableContentWidth - leftIconPadding - iconWidth - totalGaps - valWidth;
             
             // Calculate positions - equal left/right margins
-            int iconX = margin + leftIconPadding - S(4);  // 图标左移4px
-            int barLeft = iconX + iconWidth + elementGap + S(3);  // 滑块中心点右移3px
-            int valX = barLeft + barWidth + elementGap + S(10);  // 数值右移10px
-            barWidth += S(6);  // 滑块延长6px
+            int iconX = margin + leftIconPadding - S(3);  // 图标左移
+            int barLeft = iconX + iconWidth + elementGap + S(2);  // 滑块中心点右移
+            int valX = barLeft + barWidth + elementGap + S(8);  // 数值右移
+            barWidth += S(5);  // 滑块延长
             
             // Auto-calculate item height with generous padding
-            int itemHeight = barHeight + S(24);  // 12px padding top and bottom
+            int itemHeight = barHeight + S(20);  // 上下留白
             
             // Calculate OSD height based on content with monitor gaps（尺寸已在 ShowForMonitor 里设置好）
             int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
@@ -930,7 +933,7 @@ namespace SimpleBrightness
             int startY = Math.Max(margin, (this.Height - totalContentHeight) / 2);
             
             // Icon font for brightness symbol - use EC8A icon
-            using (Font iconFont = new Font("Segoe MDL2 Assets", 13, FontStyle.Regular))
+            using (Font iconFont = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular))
             using (Brush iconBrush = new SolidBrush(_textColor))
             {
                 // Draw ALL monitors
@@ -968,7 +971,7 @@ namespace SimpleBrightness
                     }
 
                     // Value text - vertically centered with the bar using TextRenderer
-                    using (Font valFont = new Font("Segoe UI", 10.5f, FontStyle.Regular))
+                    using (Font valFont = new Font("Segoe UI", 10, FontStyle.Regular))
                     {
                         string valText = brightness.ToString();
                         Size valTextSize = TextRenderer.MeasureText(valText, valFont);
