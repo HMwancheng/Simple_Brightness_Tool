@@ -773,7 +773,7 @@ namespace SimpleBrightness
         private Color _trackColor => ThemeManager.IsDarkMode ? Color.FromArgb(80, 80, 80) : Color.FromArgb(200, 200, 200);
 
         // OSD 内部全部按屏幕 DPI 换算；禁用 WinForms 自动缩放避免双重缩放
-        private int S(int px) => (int)Math.Round(px * _scale);
+        private int S(int px) => (int)Math.Round(px * _scale, MidpointRounding.AwayFromZero);
         
         public NativeOsdForm(List<MonitorInfo> monitors)
         {
@@ -801,14 +801,15 @@ namespace SimpleBrightness
         private void ApplyLayoutForScreen(Screen screen)
         {
             _scale = DpiUtil.Scale(screen);
-            // 基础尺寸对齐 Windows 自带 OSD（150% 下约 290px 宽）
-            int itemHeight = S(3) + S(18);   // 与 OnPaint 中的 itemHeight 保持一致
+            // 对齐 Windows 原生 OSD：单条约 71px @150%（47 DIP），宽度约 290px
+            int itemHeight = S(4) + S(17);   // 与 OnPaint 中的 itemHeight 保持一致
             int monitorGap = S(12);
-            int padding = S(10);
+            int padding = S(13);
             int width = S(192);
             int count = Math.Max(1, _monitors.Count);
             int contentHeight = count * itemHeight + Math.Max(0, count - 1) * monitorGap;
-            int height = Math.Max(S(70), contentHeight + padding * 2);
+            // 高度完全由内容决定，不再用固定下限把单屏撑高
+            int height = contentHeight + padding * 2;
             this.Size = new Size(width, height);
         }
 
@@ -904,7 +905,7 @@ namespace SimpleBrightness
             if (_monitors.Count == 0) return;
             
             // Auto-calculate layout with equal margins（全部按屏幕 DPI 换算）
-            int barHeight = S(3);            // Progress bar height（Win11 原生 OSD 的细条）
+            int barHeight = S(4);            // Progress bar height（原生约 6px @150%）
             int margin = S(12);              // Equal margin on left and right
             int leftIconPadding = S(4);      // Extra padding on left of icon
             int elementGap = S(8);           // Gap between icon/bar/value
@@ -924,7 +925,7 @@ namespace SimpleBrightness
             barWidth += S(4);  // 滑块延长
             
             // Auto-calculate item height with generous padding
-            int itemHeight = barHeight + S(18);  // 上下留白
+            int itemHeight = barHeight + S(17);  // 上下留白
             
             // Calculate OSD height based on content with monitor gaps（尺寸已在 ShowForMonitor 里设置好）
             int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
