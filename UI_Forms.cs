@@ -801,14 +801,14 @@ namespace SimpleBrightness
         private void ApplyLayoutForScreen(Screen screen)
         {
             _scale = DpiUtil.Scale(screen);
-            // 基础尺寸已回落到 96 DPI 设计值，实际大小由 _scale 换算
-            int itemHeight = S(5) + S(20);   // 与 OnPaint 中的 itemHeight 保持一致
+            // 基础尺寸对齐 Windows 自带 OSD（150% 下约 290px 宽）
+            int itemHeight = S(3) + S(18);   // 与 OnPaint 中的 itemHeight 保持一致
             int monitorGap = S(12);
-            int padding = S(16);
-            int width = S(240);
+            int padding = S(10);
+            int width = S(192);
             int count = Math.Max(1, _monitors.Count);
             int contentHeight = count * itemHeight + Math.Max(0, count - 1) * monitorGap;
-            int height = Math.Max(S(90), contentHeight + padding * 2);
+            int height = Math.Max(S(70), contentHeight + padding * 2);
             this.Size = new Size(width, height);
         }
 
@@ -904,13 +904,13 @@ namespace SimpleBrightness
             if (_monitors.Count == 0) return;
             
             // Auto-calculate layout with equal margins（全部按屏幕 DPI 换算）
-            int barHeight = S(5);            // Progress bar height
-            int margin = S(16);              // Equal margin on left and right
-            int leftIconPadding = S(5);      // Extra padding on left of icon
-            int elementGap = S(10);          // Gap between icon/bar/value
-            int iconWidth = S(20);           // Width allocated for icon
+            int barHeight = S(3);            // Progress bar height（Win11 原生 OSD 的细条）
+            int margin = S(12);              // Equal margin on left and right
+            int leftIconPadding = S(4);      // Extra padding on left of icon
+            int elementGap = S(8);           // Gap between icon/bar/value
+            int iconWidth = S(18);           // Width allocated for icon
             int monitorGap = S(12);          // Gap between monitors
-            int valWidth = S(30);            // Width for value text
+            int valWidth = S(28);            // Width for value text
             
             // Calculate available width with equal left/right margins
             int availableContentWidth = this.Width - (margin * 2);
@@ -918,13 +918,13 @@ namespace SimpleBrightness
             int barWidth = availableContentWidth - leftIconPadding - iconWidth - totalGaps - valWidth;
             
             // Calculate positions - equal left/right margins
-            int iconX = margin + leftIconPadding - S(3);  // 图标左移
+            int iconX = margin + leftIconPadding - S(2);  // 图标左移
             int barLeft = iconX + iconWidth + elementGap + S(2);  // 滑块中心点右移
-            int valX = barLeft + barWidth + elementGap + S(8);  // 数值右移
-            barWidth += S(5);  // 滑块延长
+            int valX = barLeft + barWidth + elementGap + S(6);  // 数值右移
+            barWidth += S(4);  // 滑块延长
             
             // Auto-calculate item height with generous padding
-            int itemHeight = barHeight + S(20);  // 上下留白
+            int itemHeight = barHeight + S(18);  // 上下留白
             
             // Calculate OSD height based on content with monitor gaps（尺寸已在 ShowForMonitor 里设置好）
             int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
