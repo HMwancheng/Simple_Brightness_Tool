@@ -808,10 +808,7 @@ namespace SimpleBrightness
             int width = S(192);
             int count = Math.Max(1, _monitors.Count);
             int contentHeight = count * itemHeight + Math.Max(0, count - 1) * monitorGap;
-            // 高度完全由内容决定，并额外为上下阴影预留空间
-            int pillHeight = contentHeight + padding * 2;
-            int shadow = S(1);
-            this.Size = new Size(width, pillHeight + shadow * 2);
+            this.Size = new Size(width, contentHeight + padding * 2);
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -892,19 +889,8 @@ namespace SimpleBrightness
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-            // 背景填充阴影色，再在中间绘制药丸形主体
-            int shadow = S(1);
-            int pillHeight = this.Height - shadow * 2;
-            using (var shadowBrush = new SolidBrush(ColorTranslator.FromHtml("#b8b8b8")))
-            {
-                g.FillRectangle(shadowBrush, this.ClientRectangle);
-            }
-
-            using (var pillPath = RoundedRectPath(new Rectangle(0, shadow, Width, pillHeight), S(8)))
-            using (var pillBrush = new SolidBrush(_bgColor))
-            {
-                g.FillPath(pillBrush, pillPath);
-            }
+            // 背景填充；阴影交给 Windows 自带的窗口阴影
+            g.Clear(_bgColor);
 
             if (_monitors.Count == 0) return;
             
@@ -934,8 +920,8 @@ namespace SimpleBrightness
             // Calculate OSD height based on content with monitor gaps（尺寸已在 ShowForMonitor 里设置好）
             int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
             
-            // Starting Y with equal margin（阴影区域内垂直居中）
-            int startY = shadow + Math.Max(0, (pillHeight - totalContentHeight) / 2);
+            // Starting Y with equal margin（垂直居中）
+            int startY = Math.Max(0, (this.Height - totalContentHeight) / 2);
             
             // Icon font for brightness symbol - use EC8A icon
             using (Font iconFont = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular))
@@ -988,24 +974,6 @@ namespace SimpleBrightness
             }
         }
         
-        private static GraphicsPath RoundedRectPath(Rectangle rect, int radius)
-        {
-            var path = new GraphicsPath();
-            if (radius <= 0)
-            {
-                path.AddRectangle(rect);
-                return path;
-            }
-
-            int d = radius * 2;
-            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            return path;
-        }
-
         private void FillRoundedRectangle(Graphics g, Brush brush, float x, float y, float w, float h, float r)
         {
             if (r > h / 2) r = h / 2;
