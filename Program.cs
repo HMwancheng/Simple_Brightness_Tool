@@ -1,6 +1,5 @@
 using Microsoft.Win32;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -52,8 +51,24 @@ namespace SimpleBrightness
         private uint _trayIconId = 0;
         private HotkeyMessageWindow? _hotkeyWindow;
 
+        // 显示器列表可能被后台扫描线程重建，统一用此锁保护
+        private readonly object _monitorsLock = new object();
+        // 托盘图标矩形缓存：钩子回调里只读缓存，绝不在这里做 Shell IPC
+        private readonly object _trayRectLock = new object();
+        private NativeMethods.Rect _trayIconRect;
+        private bool _hasTrayIconRect;
+        private Thread? _trayRectThread;
+        // UI 线程调度器（钩子/后台线程把重活投递回 UI 线程）
+        private readonly Control _uiInvoker = new Control();
+        // 滚轮增量合并，避免每个滚轮事件都触发一次重绘
+        private int _pendingWheelDelta;
+        private int _wheelFlushQueued;
+
         public MyCustomApplicationContext()
         {
+            // 强制创建句柄：钩子/后台线程通过它 BeginInvoke 回到 UI 线程
+            _ = _uiInvoker.Handle;
+
             config = AppConfig.Load();
             config.Save();
 
@@ -63,7 +78,7 @@ namespace SimpleBrightness
             RefreshMonitors();
             RestoreOrReadBrightness();
             
-            Application.ApplicationExit += (s, e) => { UnregisterSystemEvents(); SaveAllSettings(); };
+            Application.ApplicationExit += (s, e) => { UnregisterSystemEvents(); SaveAllSettings(); CleanupDispatcher(); };
             RegisterSystemEvents();
 
             contextMenu = new ContextMenuStrip();
@@ -122,7 +137,8 @@ namespace SimpleBrightness
             };
             
             CacheTrayIconInfo();
-            
+            StartTrayRectWorker();
+
             trayIcon.MouseClick += (s, e) => { 
                 if (e.Button == MouseButtons.Left) ShowBrightnessWindow(); 
                 else if (e.Button == MouseButtons.Middle) SyncAllBrightness();
@@ -176,13 +192,13 @@ namespace SimpleBrightness
             int step = config.ScrollStep;
             if (!increase) step = -step;
             
-            foreach (var monitor in monitors)
+            foreach (var monitor in SnapshotMonitors())
             {
                 int newValue = monitor.LastBrightness + step;
                 newValue = Math.Max(0, Math.Min(100, newValue));
                 
-                // Use ApplyBrightness which handles curve and OSD
-                ApplyBrightness(monitor, newValue, false);
+                // Use ApplyBrightness which handles curve; OSD 统一在最后显示一次
+                ApplyBrightness(monitor, newValue, false, false);
             }
             
             // Show OSD after all adjustments
@@ -200,25 +216,29 @@ namespace SimpleBrightness
 
         private void SyncAllBrightness()
         {
-            if (monitors.Count == 0) return;
-            int targetVal = monitors[0].LastBrightness;
-            foreach (var m in monitors)
+            var snapshot = SnapshotMonitors();
+            if (snapshot.Count == 0) return;
+            int targetVal = snapshot[0].LastBrightness;
+            foreach (var m in snapshot)
             {
                 if (config.HiddenMonitors.Contains(m.UniqueId)) continue;
                 m.LastBrightness = targetVal;
-                ApplyBrightness(m, targetVal, true);
+                ApplyBrightness(m, targetVal, true, false);
             }
+            ShowUnifiedOsd();
         }
 
         private void RegisterSystemEvents() {
             SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
             SystemEvents.SessionSwitch += SystemEvents_SessionSwitch;
             SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged;
+            SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         }
         private void UnregisterSystemEvents() {
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             SystemEvents.SessionSwitch -= SystemEvents_SessionSwitch;
             SystemEvents.PowerModeChanged -= SystemEvents_PowerModeChanged;
+            SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
         }
         private async void SystemEvents_PowerModeChanged(object? sender, PowerModeChangedEventArgs e) {
             if (e.Mode == PowerModes.Resume) { await Task.Delay(2000); ReloadMonitorsSafe(); }
@@ -226,7 +246,19 @@ namespace SimpleBrightness
         private async void SystemEvents_SessionSwitch(object? sender, SessionSwitchEventArgs e) {
             if (e.Reason == SessionSwitchReason.SessionUnlock || e.Reason == SessionSwitchReason.ConsoleConnect) { await Task.Delay(2000); ReloadMonitorsSafe(); }
         }
-        private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) { ReloadMonitorsSafe(); }
+        private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e) {
+            // 分辨率/缩放变化后托盘图标尺寸与位置都可能变
+            RunOnUi(RefreshTrayIcon);
+            ReloadMonitorsSafe();
+        }
+        private void SystemEvents_UserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e) {
+            if (e.Category == UserPreferenceCategory.General || e.Category == UserPreferenceCategory.Desktop) {
+                RunOnUi(RefreshTrayIcon);
+            }
+        }
+        private void RefreshTrayIcon() {
+            try { if (trayIcon != null) trayIcon.Icon = IconDrawer.LoadTrayIcon(config.TrayIconStyle); } catch { }
+        }
 
         // 获取显示器的亮度配置值，支持新旧ID格式兼容
         private int? GetSavedBrightnessForMonitor(MonitorInfo m, int index)
@@ -363,64 +395,87 @@ namespace SimpleBrightness
         // 获取曲线配置的便捷方法（使用显示器在列表中的索引）
         private Dictionary<int, int> GetCurveForMonitorWithFallback(MonitorInfo m)
         {
-            int index = monitors.IndexOf(m);
+            var snapshot = SnapshotMonitors();
+            int index = snapshot.IndexOf(m);
             if (index < 0) index = 0;
             
             var curve = GetCurveForMonitor(m, index);
-            if (curve != null) return curve;
+            if (curve != null && curve.Count >= 2) return curve;
             
             // 返回默认曲线
             return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
         }
 
-        private void ReloadMonitorsSafe() {
-            // [卡顿修复] 睡眠唤醒时，Resume / SessionUnlock / DisplaySettingsChanged 三个系统事件几乎同时触发本方法。
-            // 低层鼠标钩子（SetWindowsHookEx）的回调运行在 UI 线程上，而 WMI 查询 + DDC 枚举非常耗时。
-            // 若在 UI 线程同步执行，会阻塞消息泵，导致唤醒后鼠标卡顿 1-3 秒。
-            // 这里用单次标记合并并发请求，并把重量级扫描放后台线程执行。
+        /// <summary>
+        /// 把 Action 投递到 UI 线程执行。鼠标钩子与后台扫描线程都必须通过它回到 UI 线程，
+        /// 避免在钩子回调里做 WMI/DDC/窗口绘制导致全系统鼠标卡顿。
+        /// </summary>
+        private void RunOnUi(Action action)
+        {
+            try {
+                if (_uiInvoker.IsHandleCreated) {
+                    _uiInvoker.BeginInvoke(action);
+                    return;
+                }
+            } catch { }
+            action();
+        }
+
+        private List<MonitorInfo> SnapshotMonitors()
+        {
+            lock (_monitorsLock) return new List<MonitorInfo>(monitors);
+        }
+
+        public void ReloadMonitorsSafe() {
+            // 合并唤醒时同时触发的多个系统事件，避免重复全量扫描
             if (Interlocked.CompareExchange(ref _reloading, 1, 0) != 0) return;
 
-            // 关闭主窗口（UI 控件操作，用 BeginInvoke 异步进行，不阻塞）
-            try {
-                var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
-                if (form != null && !form.IsDisposed && form.Visible)
-                    form.BeginInvoke(new Action(() => form.Close()));
-            } catch { }
-
-            // 旧 OSD 弹出层延迟销毁（异步，不阻塞）
-            var oldOsd = _osdForm;
-            if (oldOsd != null && !oldOsd.IsDisposed) {
-                try { oldOsd.BeginInvoke(new Action(() => oldOsd.Dispose())); } catch { }
-            }
-            _osdForm = null;
-
-            // 先保存当前亮度（字典操作，很快，留在 UI 线程）
-            foreach (var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
-
-            // 重量级扫描放到后台线程，避免阻塞鼠标钩子所在的 UI 线程
-            Task.Run(() => {
+            // 系统事件可能来自非 UI 线程，先切回 UI 线程再操作窗口
+            RunOnUi(() => {
+                // 关闭主窗口（异步，不阻塞）
                 try {
-                    // 清空显示器列表，强制重新创建
-                    monitors.Clear();
+                    var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
+                    if (form != null && !form.IsDisposed && form.Visible)
+                        form.BeginInvoke(new Action(() => form.Close()));
+                } catch { }
 
-                    // 重新扫描显示器（WMI + DDC 枚举，纯数据操作）
-                    RefreshMonitors();
-
-                    // 恢复亮度值
-                    RestoreBrightnessAfterReload();
-
-                    // 读取硬件实际亮度并反推软件值
-                    ReadRealBrightness();
-                } finally {
-                    _reloading = 0;
+                // 旧 OSD 弹出层延迟销毁（异步，不阻塞）
+                var oldOsd = _osdForm;
+                if (oldOsd != null && !oldOsd.IsDisposed) {
+                    try { oldOsd.BeginInvoke(new Action(() => oldOsd.Dispose())); } catch { }
                 }
+                _osdForm = null;
+
+                // 先保存当前亮度（字典操作，很快）
+                foreach (var m in SnapshotMonitors()) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
+
+                // 重量级枚举放到后台线程，且只做纯数据检测；结果再回到 UI 线程应用
+                Task.Run(() => {
+                    List<MonitorInfo> detected;
+                    try {
+                        detected = DetectMonitors();
+                    } catch {
+                        Interlocked.Exchange(ref _reloading, 0);
+                        return;
+                    }
+
+                    RunOnUi(() => {
+                        try {
+                            ApplyDetectedMonitors(detected);
+                            RestoreBrightnessAfterReload();
+                            ReadRealBrightness();
+                        } finally {
+                            Interlocked.Exchange(ref _reloading, 0);
+                        }
+                    });
+                });
             });
         }
 
-        // 在显示器列表重建后，恢复每个显示器保存的亮度值
+        // 在显示器列表重建后，恢复每个显示器保存的亮度值（UI 线程）
         private void RestoreBrightnessAfterReload() {
             int idx = 0;
-            foreach (var m in monitors) {
+            foreach (var m in SnapshotMonitors()) {
                 var savedVal = GetSavedBrightnessForMonitor(m, idx);
                 if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
                 idx++;
@@ -431,157 +486,193 @@ namespace SimpleBrightness
         {
             bool needReadHardware = false;
             int idx = 0;
-            foreach (var m in monitors) {
+            foreach (var m in SnapshotMonitors()) {
                 var savedVal = GetSavedBrightnessForMonitor(m, idx);
                 if (savedVal.HasValue) m.LastBrightness = savedVal.Value;
                 else needReadHardware = true;
                 idx++;
             }
-            if (needReadHardware) Task.Run(() => ReadRealBrightness());
+            if (needReadHardware) ReadRealBrightness();
         }
 
         private void SaveAllSettings()
         {
-            foreach(var m in monitors) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
+            foreach(var m in SnapshotMonitors()) config.SavedBrightness[m.UniqueId] = m.LastBrightness;
             config.Save();
         }
 
-        // [核心修复] 读取硬件亮度并反推软件值
+        /// <summary>
+        /// 后台读取硬件亮度，再回到 UI 线程反推软件值（后台线程不碰配置与控件）
+        /// </summary>
         private void ReadRealBrightness()
         {
+            var snapshot = SnapshotMonitors();
+            Task.Run(() => {
+                var readings = new List<(MonitorInfo Monitor, int Value)>();
+                int wmiValue = snapshot.Any(m => m.Type == MonitorType.WMI) ? BrightnessController.GetWmiBrightness() : -1;
+                foreach (var m in snapshot) {
+                    int value = m.Type == MonitorType.WMI ? wmiValue
+                              : (m.Type == MonitorType.DDC ? BrightnessController.GetVCPBrightness(m.Handle) : -1);
+                    if (value != -1) readings.Add((m, value));
+                }
+                RunOnUi(() => ApplyRealBrightness(readings));
+            });
+        }
+
+        // 应用硬件读数（UI 线程）
+        private void ApplyRealBrightness(List<(MonitorInfo Monitor, int Value)> readings)
+        {
+            if (readings.Count == 0) return;
+            var snapshot = SnapshotMonitors();
+
             // 先获取主屏（WMI）的保存亮度值，用于副屏同步
             int? primarySavedBrightness = null;
-            foreach (var m in monitors)
+            foreach (var m in snapshot)
             {
                 if (m.Type == MonitorType.WMI)
                 {
-                    int idx = monitors.IndexOf(m);
+                    int idx = snapshot.IndexOf(m);
                     if (idx < 0) idx = 0;
                     primarySavedBrightness = GetSavedBrightnessForMonitor(m, idx);
                     break;
                 }
             }
-            // 如果没有WMI显示器，使用第一个显示器的亮度作为主屏值
-            if (primarySavedBrightness == null && monitors.Count > 0)
-            {
-                int idx = 0;
-                primarySavedBrightness = GetSavedBrightnessForMonitor(monitors[0], idx);
-            }
-            
-            foreach (var m in monitors) {
-                int realHardwareVal = -1;
-                
-                if (m.Type == MonitorType.WMI) {
-                    try {
-                        var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
-                        foreach (ManagementObject obj in searcher.Get()) {
-                            var val = obj["CurrentBrightness"];
-                            if (val != null && int.TryParse(val.ToString(), out int pVal)) 
-                                realHardwareVal = pVal;
-                        }
-                    } catch { }
-                } else if (m.Type == MonitorType.DDC) {
-                     realHardwareVal = BrightnessController.GetVCPBrightness(m.Handle);
+            if (primarySavedBrightness == null && snapshot.Count > 0)
+                primarySavedBrightness = GetSavedBrightnessForMonitor(snapshot[0], 0);
+
+            foreach (var (m, realHardwareVal) in readings) {
+                int finalSoftwareVal = realHardwareVal;
+
+                // 非调试模式下按曲线反推软件值，避免下次调节亮度骤降
+                if (!_isDebugMode && m.Type == MonitorType.DDC) {
+                    var curve = GetCurveForMonitorWithFallback(m);
+                    finalSoftwareVal = ReverseInterpolate(realHardwareVal, curve);
                 }
 
-                if (realHardwareVal != -1) {
-                    int finalSoftwareVal = realHardwareVal;
+                int idx = snapshot.IndexOf(m);
+                if (idx < 0) idx = 0;
+                var savedBrightness = GetSavedBrightnessForMonitor(m, idx);
 
-                    // 如果不是调试模式，则需要根据曲线反推软件数值
-                    // 解决：硬件20 -> 反推软件40。如果不反推，直接赋20，下次操作会基于20计算(对应硬件5)，导致亮度骤降。
-                    if (!_isDebugMode && m.Type == MonitorType.DDC) {
-                         var curve = GetCurveForMonitorWithFallback(m);
-                         finalSoftwareVal = ReverseInterpolate(realHardwareVal, curve);
-                    }
-
-                    // [修复] 睡眠唤醒后亮度插值微小偏差问题
-                    int idx = monitors.IndexOf(m);
-                    if (idx < 0) idx = 0;
-                    var savedBrightness = GetSavedBrightnessForMonitor(m, idx);
-                    
-                    if (m.Type == MonitorType.DDC && primarySavedBrightness.HasValue)
+                if (m.Type == MonitorType.DDC && primarySavedBrightness.HasValue)
+                {
+                    int primaryDiff = Math.Abs(finalSoftwareVal - primarySavedBrightness.Value);
+                    if (primaryDiff <= 5)
                     {
-                        // 副屏优先同步主屏亮度，保证多屏一致性
-                        int primaryDiff = Math.Abs(finalSoftwareVal - primarySavedBrightness.Value);
-                        if (primaryDiff <= 5)
-                        {
-                            // 反推值与主屏亮度接近，使用主屏亮度值
-                            finalSoftwareVal = primarySavedBrightness.Value;
-                        }
-                        else if (savedBrightness.HasValue)
-                        {
-                            // 与主屏差异较大，但与保存值差异很小，使用保存值
-                            int diff = Math.Abs(finalSoftwareVal - savedBrightness.Value);
-                            if (diff <= 2 && diff > 0) {
-                                finalSoftwareVal = savedBrightness.Value;
-                            }
-                            // 如果与保存值差异也较大，则使用反推值（实际硬件亮度）
-                        }
-                        // 如果没有保存值，使用反推值
+                        finalSoftwareVal = primarySavedBrightness.Value;
                     }
-                    else if (m.Type == MonitorType.WMI && savedBrightness.HasValue) {
-                        // 主屏（WMI）：如果与保存值差异很小（<=2），使用保存值
+                    else if (savedBrightness.HasValue)
+                    {
                         int diff = Math.Abs(finalSoftwareVal - savedBrightness.Value);
-                        if (diff <= 2 && diff > 0) {
-                            finalSoftwareVal = savedBrightness.Value;
-                        }
+                        if (diff <= 2 && diff > 0) finalSoftwareVal = savedBrightness.Value;
                     }
-
-                    m.LastBrightness = finalSoftwareVal;
-                    
-                    var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
-                    if (form != null && !form.IsDisposed && form.Visible)
-                        form.Invoke(new Action(() => form.UpdateSlider(m.UniqueId, finalSoftwareVal)));
                 }
+                else if (m.Type == MonitorType.WMI && savedBrightness.HasValue) {
+                    int diff = Math.Abs(finalSoftwareVal - savedBrightness.Value);
+                    if (diff <= 2 && diff > 0) finalSoftwareVal = savedBrightness.Value;
+                }
+
+                m.LastBrightness = finalSoftwareVal;
+
+                var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
+                if (form != null && !form.IsDisposed && form.Visible)
+                    form.BeginInvoke(new Action(() => form.UpdateSlider(m.UniqueId, finalSoftwareVal)));
             }
         }
 
         private void OnGlobalMouseWheel(object? sender, MouseEventArgs e)
         {
-            if (!IsMouseOverMyTrayIcon()) return;
-            int change = e.Delta > 0 ? config.ScrollStep : -config.ScrollStep;
-            int idx = 0;
-            foreach (var m in monitors)
+            // 注意：这里运行在低层鼠标钩子（WH_MOUSE_LL）回调中。
+            // 回调超时会导致全系统鼠标发涩，所以只做缓存判断 + 累加，然后立即返回。
+            if (!IsPointOverTrayIcon(e.X, e.Y)) return;
+
+            int step = config.ScrollStep;
+            Interlocked.Add(ref _pendingWheelDelta, e.Delta > 0 ? step : -step);
+
+            // 同一时间只排队一次刷新，连续滚轮会在一次刷新里合并
+            if (Interlocked.Exchange(ref _wheelFlushQueued, 1) == 0)
             {
-                if (!IsMonitorHidden(m, idx))
-                {
-                    int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
-                    ApplyBrightness(m, newVal, true);
-                }
-                idx++;
+                RunOnUi(FlushWheelDelta);
             }
         }
 
-        private bool IsMouseOverMyTrayIcon()
+        // 在 UI 线程应用合并后的滚轮增量
+        private void FlushWheelDelta()
         {
-            try
+            Interlocked.Exchange(ref _wheelFlushQueued, 0);
+            int change = Interlocked.Exchange(ref _pendingWheelDelta, 0);
+            if (change == 0) return;
+
+            var snapshot = SnapshotMonitors();
+            for (int idx = 0; idx < snapshot.Count; idx++)
             {
-                if (_trayIconHandle == IntPtr.Zero || _trayIconId == 0)
-                {
-                    CacheTrayIconInfo();
-                }
-                
-                if (_trayIconHandle != IntPtr.Zero && _trayIconId != 0)
-                {
-                    var nid = new NativeMethods.NOTIFYICONIDENTIFIER
-                    {
-                        cbSize = Marshal.SizeOf<NativeMethods.NOTIFYICONIDENTIFIER>(),
-                        hWnd = _trayIconHandle,
-                        uID = _trayIconId,
-                        guidItem = Guid.Empty
-                    };
-                    
-                    int result = NativeMethods.Shell_NotifyIconGetRect(ref nid, out NativeMethods.Rect rect);
-                    if (result == 0)
-                    {
-                        var pt = Cursor.Position;
-                        return pt.X >= rect.left && pt.X <= rect.right &&
-                               pt.Y >= rect.top && pt.Y <= rect.bottom;
-                    }
-                }
+                var m = snapshot[idx];
+                if (IsMonitorHidden(m, idx)) continue;
+                int newVal = Math.Clamp(m.LastBrightness + change, 0, 100);
+                ApplyBrightness(m, newVal, true, false);
             }
-            catch { }
-            return false;
+            ShowUnifiedOsd();
+        }
+
+        // 只读缓存，不做任何 Shell IPC（真正的查询在后台线程里做）
+        private bool IsPointOverTrayIcon(int x, int y)
+        {
+            NativeMethods.Rect rect;
+            lock (_trayRectLock)
+            {
+                if (!_hasTrayIconRect) return false;
+                rect = _trayIconRect;
+            }
+            return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        }
+
+        /// <summary>
+        /// 托盘图标矩形后台刷新线程：Shell_NotifyIconGetRect 是跨进程调用，
+        /// 放在后台线程可以避免它拖慢消息泵和低层鼠标钩子。
+        /// </summary>
+        private void StartTrayRectWorker()
+        {
+            if (_trayRectThread != null) return;
+
+            _trayRectThread = new Thread(() =>
+            {
+                while (true)
+                {
+                    try
+                    {
+                        if (_trayIconHandle == IntPtr.Zero || _trayIconId == 0) CacheTrayIconInfo();
+
+                        if (_trayIconHandle != IntPtr.Zero && _trayIconId != 0)
+                        {
+                            var nid = new NativeMethods.NOTIFYICONIDENTIFIER
+                            {
+                                cbSize = Marshal.SizeOf<NativeMethods.NOTIFYICONIDENTIFIER>(),
+                                hWnd = _trayIconHandle,
+                                uID = _trayIconId,
+                                guidItem = Guid.Empty
+                            };
+
+                            if (NativeMethods.Shell_NotifyIconGetRect(ref nid, out NativeMethods.Rect rect) == 0)
+                            {
+                                lock (_trayRectLock)
+                                {
+                                    _trayIconRect = rect;
+                                    _hasTrayIconRect = true;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    Thread.Sleep(1000);
+                }
+            })
+            { IsBackground = true, Name = "TrayIconRectWorker" };
+
+            _trayRectThread.Start();
+        }
+
+        private void CleanupDispatcher()
+        {
+            try { _uiInvoker.Dispose(); } catch { }
         }
 
         private void CacheTrayIconInfo()
@@ -634,7 +725,7 @@ namespace SimpleBrightness
             catch { }
         }
 
-        public void ApplyBrightness(MonitorInfo m, int val, bool updateUi = true)
+        public void ApplyBrightness(MonitorInfo m, int val, bool updateUi = true, bool showOsd = true)
         {
             m.LastBrightness = val;
             int finalVal = val;
@@ -645,7 +736,7 @@ namespace SimpleBrightness
             }
             
             if (m.Type == MonitorType.WMI) {
-                Task.Run(() => BrightnessController.SetBrightnessImmediate(m, finalVal));
+                BrightnessController.SetBrightnessImmediate(m, finalVal);
             } else {
                 BrightnessController.SetBrightnessDebounced(m, finalVal, config.DebounceTime);
             }
@@ -654,8 +745,8 @@ namespace SimpleBrightness
             bool isMainWinVisible = (form != null && !form.IsDisposed && form.Visible);
 
             if (isMainWinVisible) {
-                if (updateUi) form!.Invoke(new Action(() => form.UpdateSlider(m.UniqueId, val)));
-            } else {
+                if (updateUi) form!.BeginInvoke(new Action(() => form.UpdateSlider(m.UniqueId, val)));
+            } else if (showOsd) {
                 ShowUnifiedOsd();
             }
         }
@@ -665,7 +756,7 @@ namespace SimpleBrightness
             // 始终重新计算可见显示器列表，以确保隐藏状态变化被正确反映
             var visibleMonitors = new List<MonitorInfo>();
             int idx = 0;
-            foreach (var m in monitors) {
+            foreach (var m in SnapshotMonitors()) {
                 if (!IsMonitorHidden(m, idx)) visibleMonitors.Add(m);
                 idx++;
             }
@@ -673,16 +764,15 @@ namespace SimpleBrightness
 
             if (_osdForm == null || _osdForm.IsDisposed) {
                 _osdForm = new NativeOsdForm(visibleMonitors);
+            } else {
+                _osdForm.UpdateMonitors(visibleMonitors);
             }
 
             // 显示第一个可见显示器的OSD
-            if (visibleMonitors.Count > 0)
-            {
-                if (_osdForm.InvokeRequired)
-                    _osdForm.Invoke(new Action(() => _osdForm.ShowForMonitor(0)));
-                else
-                    _osdForm.ShowForMonitor(0);
-            }
+            if (_osdForm.InvokeRequired)
+                _osdForm.BeginInvoke(new Action(() => _osdForm.ShowForMonitor(0)));
+            else
+                _osdForm.ShowForMonitor(0);
         }
 
         // 正向插值：软件 -> 硬件 (X -> Y)
@@ -725,16 +815,16 @@ namespace SimpleBrightness
         }
 
         private void ShowBrightnessWindow() {
+            var snapshot = SnapshotMonitors();
             var form = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
             if (form == null || form.IsDisposed)
-                form = new BrightnessForm(monitors, config, this, contextMenu);
+                form = new BrightnessForm(snapshot, config, this, contextMenu);
             form.Show(); form.Activate();
-            foreach(var m in monitors) form.UpdateSlider(m.UniqueId, m.LastBrightness);
+            foreach(var m in snapshot) form.UpdateSlider(m.UniqueId, m.LastBrightness);
         }
 
         private void ShowSettings()
         {
-            string oldTrayIconStyle = config.TrayIconStyle;
             var form = new SettingsForm(config);
             form.FormClosed += (s, e) =>
             {
@@ -763,15 +853,16 @@ namespace SimpleBrightness
             // 同步所有显示器的亮度（与中键点击托盘图标效果相同）
             try
             {
-                if (monitors.Count == 0) return;
+                var snapshot = SnapshotMonitors();
+                if (snapshot.Count == 0) return;
                 
                 // 获取第一个显示器的亮度作为参考
-                int referenceBrightness = monitors[0].LastBrightness;
+                int referenceBrightness = snapshot[0].LastBrightness;
                 
                 // 应用到所有其他显示器
-                foreach (var monitor in monitors.Skip(1))
+                foreach (var monitor in snapshot.Skip(1))
                 {
-                    ApplyBrightness(monitor, referenceBrightness, false);
+                    ApplyBrightness(monitor, referenceBrightness, false, false);
                 }
                 
                 // 显示OSD提示
@@ -927,7 +1018,33 @@ namespace SimpleBrightness
 
         public List<MonitorInfo> GetMonitors()
         {
-            return monitors;
+            return SnapshotMonitors();
+        }
+
+        /// <summary>
+        /// 按 UniqueId（或同名哈希）查找当前显示器，供曲线编辑器保存时定位到最新 ID
+        /// </summary>
+        public MonitorInfo? FindMonitorByUniqueIdOrHash(string uniqueId)
+        {
+            var snapshot = SnapshotMonitors();
+            var exact = snapshot.FirstOrDefault(m => m.UniqueId == uniqueId);
+            if (exact != null) return exact;
+
+            if (uniqueId.StartsWith("DDC_") && uniqueId.Contains("_H")) {
+                string[] parts = uniqueId.Split('_');
+                if (parts.Length >= 2) {
+                    string hash = parts[1];
+                    return snapshot.FirstOrDefault(m => m.UniqueId.StartsWith($"DDC_{hash}_H"));
+                }
+            }
+            return null;
+        }
+
+        /// <summary>曲线保存后立即按新曲线重新应用到硬件，避免“保存了但看不出变化”</summary>
+        public void ReapplyBrightness(MonitorInfo m)
+        {
+            ApplyBrightness(m, m.LastBrightness, true, false);
+            ShowUnifiedOsd();
         }
 
         /// <summary>
@@ -938,7 +1055,7 @@ namespace SimpleBrightness
         private IntPtr GetLatestMonitorHandle(string uniqueId)
         {
             // 先在当前显示器列表中查找
-            var monitor = monitors.FirstOrDefault(m => m.UniqueId == uniqueId);
+            var monitor = SnapshotMonitors().FirstOrDefault(m => m.UniqueId == uniqueId);
             if (monitor != null && monitor.Handle != IntPtr.Zero)
             {
                 return monitor.Handle;
@@ -983,41 +1100,48 @@ namespace SimpleBrightness
 
             // 更新显示器列表中的句柄
             if (foundHandle != IntPtr.Zero) {
-                var existingMonitor = monitors.FirstOrDefault(m => m.UniqueId == uniqueId);
-                if (existingMonitor != null) {
-                    existingMonitor.Handle = foundHandle;
-                } else {
-                    // 如果显示器不存在于列表中，添加它
-                    monitors.Add(new MonitorInfo { 
-                        Type = MonitorType.DDC, 
-                        Handle = foundHandle, 
-                        UniqueId = uniqueId,
-                        Name = "外接显示器",
-                        LastBrightness = 50
-                    });
+                lock (_monitorsLock) {
+                    var existingMonitor = monitors.FirstOrDefault(m => m.UniqueId == uniqueId);
+                    if (existingMonitor != null) {
+                        existingMonitor.Handle = foundHandle;
+                    } else {
+                        // 如果显示器不存在于列表中，添加它
+                        monitors.Add(new MonitorInfo { 
+                            Type = MonitorType.DDC, 
+                            Handle = foundHandle, 
+                            UniqueId = uniqueId,
+                            Name = "外接显示器",
+                            LastBrightness = 50
+                        });
+                    }
                 }
             }
 
             return foundHandle;
         }
 
-        public void RefreshMonitors()
+        /// <summary>
+        /// 纯数据扫描（不写配置、不碰共享列表），可在后台线程安全执行
+        /// </summary>
+        private List<MonitorInfo> DetectMonitors()
         {
-            monitors.Clear();
+            var detected = new List<MonitorInfo>();
+
             try {
-                ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
+                using var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
                 foreach (ManagementObject queryObj in searcher.Get()) {
                     string id = queryObj["InstanceName"]?.ToString() ?? "UnknownWmi";
-                    if (!monitors.Any(m => m.InstanceId == id)) {
+                    if (!detected.Any(m => m.InstanceId == id)) {
                         string uniqueId = "WMI_" + GetStableHash(id);
-                        string name = config.CustomNames.ContainsKey(uniqueId) ? config.CustomNames[uniqueId] : "内置屏幕";
-                        monitors.Add(new MonitorInfo { Type = MonitorType.WMI, Name = name, InstanceId = id, UniqueId = uniqueId });
+                        string name = config.CustomNames.TryGetValue(uniqueId, out var customName) ? customName : "内置屏幕";
+                        detected.Add(new MonitorInfo { Type = MonitorType.WMI, Name = name, InstanceId = id, UniqueId = uniqueId });
                     }
                 }
             } catch { }
-            // 使用HashSet跟踪已添加的显示器句柄，防止重复枚举
+
+            // 使用 HashSet 跟踪已添加的显示器句柄，防止重复枚举
             HashSet<IntPtr> addedHandles = new HashSet<IntPtr>();
-            
+
             NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate (IntPtr hMonitor, IntPtr hdcMonitor, ref NativeMethods.Rect lprcMonitor, IntPtr dwData) {
                 int count = 0;
                 NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, ref count);
@@ -1025,35 +1149,54 @@ namespace SimpleBrightness
                     var pMs = new NativeMethods.PHYSICAL_MONITOR[count];
                     if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(hMonitor, count, pMs)) {
                         for (int i = 0; i < pMs.Length; i++) {
-                            // 检查是否已添加过此句柄（防止重复）
-                            if (addedHandles.Contains(pMs[i].hPhysicalMonitor)) {
-                                continue;
-                            }
-                            addedHandles.Add(pMs[i].hPhysicalMonitor);
-                            
+                            if (!addedHandles.Add(pMs[i].hPhysicalMonitor)) continue;
+
                             string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
-                            // 使用更稳定的唯一ID生成方法，避免同名显示器冲突
                             string uniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
-                            // 尝试获取自定义名称：先检查新ID，再检查旧ID（向后兼容）
-                            string name = originalName;
-                            if (config.CustomNames.ContainsKey(uniqueId)) {
-                                name = config.CustomNames[uniqueId];
-                            } else {
-                                // 尝试旧版ID格式，用于迁移旧配置
-                                string oldUniqueId = "DDC_" + GetStableHash(originalName) + "_IDX_" + i;
-                                if (config.CustomNames.ContainsKey(oldUniqueId)) {
-                                    name = config.CustomNames[oldUniqueId];
-                                    // 迁移：将旧配置复制到新ID
-                                    config.CustomNames[uniqueId] = name;
-                                    config.Save();
-                                }
-                            }
-                            monitors.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
+                            string name = config.CustomNames.TryGetValue(uniqueId, out var customName) ? customName : originalName;
+                            detected.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
                         }
                     }
                 }
                 return true;
             }, IntPtr.Zero);
+
+            return detected;
+        }
+
+        /// <summary>
+        /// 用扫描结果替换共享列表（必须在 UI 线程调用），并顺带迁移旧 ID 的自定义名称
+        /// </summary>
+        private void ApplyDetectedMonitors(List<MonitorInfo> detected)
+        {
+            bool migratedNames = false;
+            foreach (var m in detected) {
+                if (m.Type != MonitorType.DDC) continue;
+                if (config.CustomNames.ContainsKey(m.UniqueId)) continue;
+
+                var parts = m.UniqueId.Split('_');
+                if (parts.Length < 4) continue;
+                string oldId = $"DDC_{parts[1]}_IDX_{parts[parts.Length - 1]}";
+                if (config.CustomNames.TryGetValue(oldId, out var oldName)) {
+                    config.CustomNames[m.UniqueId] = oldName;
+                    m.Name = oldName;
+                    migratedNames = true;
+                }
+            }
+
+            lock (_monitorsLock) {
+                monitors.Clear();
+                monitors.AddRange(detected);
+            }
+
+            if (migratedNames) config.Save();
+        }
+
+        /// <summary>同步扫描（仅 UI 线程少量场景使用，例如重命名后立即刷新）</summary>
+        public void RefreshMonitors()
+        {
+            var detected = DetectMonitors();
+            ApplyDetectedMonitors(detected);
         }
 
         private static string GetStableHash(string str) {
@@ -1074,28 +1217,143 @@ namespace SimpleBrightness
 
     public static class BrightnessController 
     {
-        private static ConcurrentDictionary<string, CancellationTokenSource> _debounceTokens = new ConcurrentDictionary<string, CancellationTokenSource>();
-        
+        private const byte VCP_BRIGHTNESS = 0x10;
+
         // 显示器句柄刷新回调（用于睡眠唤醒后重新获取最新句柄）
         public static Func<string, IntPtr>? RefreshMonitorHandleCallback { get; set; }
 
+        // ================== DDC/CI：每个显示器一个后台写线程，只写最新值 ==================
+        private sealed class DdcChannel
+        {
+            public readonly object Sync = new object();
+            public MonitorInfo Target = new MonitorInfo();
+            public int Level;
+            public int DebounceMs;
+            public long LastRequest;
+            public bool HasPending;
+        }
+
+        private static readonly object _channelsLock = new object();
+        private static readonly Dictionary<string, DdcChannel> _channels = new Dictionary<string, DdcChannel>();
+
         public static void SetBrightnessDebounced(MonitorInfo monitor, int level, int debounceMs) {
-            if (_debounceTokens.TryGetValue(monitor.UniqueId, out CancellationTokenSource? oldCts)) { oldCts.Cancel(); oldCts.Dispose(); }
-            var cts = new CancellationTokenSource(); _debounceTokens[monitor.UniqueId] = cts;
-            Task.Run(async () => {
-                try { await Task.Delay(debounceMs, cts.Token); SetBrightnessImmediate(monitor, level); } catch (TaskCanceledException) { }
-            });
+            if (monitor.Type == MonitorType.WMI) { QueueWmiBrightness(level); return; }
+            if (monitor.Type != MonitorType.DDC) return;
+
+            DdcChannel channel;
+            lock (_channelsLock) {
+                if (!_channels.TryGetValue(monitor.UniqueId, out channel!)) {
+                    channel = new DdcChannel();
+                    _channels[monitor.UniqueId] = channel;
+                    var worker = new Thread(() => DdcWorkerLoop(channel)) {
+                        IsBackground = true,
+                        Name = "DdcBrightnessWriter"
+                    };
+                    worker.Start();
+                }
+            }
+
+            lock (channel.Sync) {
+                channel.Target = monitor;
+                channel.Level = level;
+                channel.DebounceMs = Math.Max(0, debounceMs);
+                channel.LastRequest = Environment.TickCount64;
+                channel.HasPending = true;
+                Monitor.Pulse(channel.Sync);
+            }
         }
 
         public static void SetBrightnessImmediate(MonitorInfo monitor, int level) {
-            if (monitor.Type == MonitorType.WMI) { 
-                try { 
-                    var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightnessMethods"); 
-                    foreach (ManagementObject m in searcher.Get()) m.InvokeMethod("WmiSetBrightness", new object[] { 1, level }); 
-                } catch {} 
-            } else if (monitor.Type == MonitorType.DDC) { 
-                NativeMethods.SetVCPFeature(monitor.Handle, 0x10, (uint)level); 
-            } 
+            if (monitor.Type == MonitorType.WMI) { QueueWmiBrightness(level); return; }
+            // DDC 也走通道线程（0ms 防抖），避免在 UI/钩子线程上阻塞 I²C 写入
+            SetBrightnessDebounced(monitor, level, 0);
+        }
+
+        private static void DdcWorkerLoop(DdcChannel channel) {
+            while (true) {
+                int level;
+                MonitorInfo target;
+
+                lock (channel.Sync) {
+                    while (!channel.HasPending) Monitor.Wait(channel.Sync);
+
+                    // 防抖窗口内持续接收新值，最后一次请求后等待 debounceMs 再写
+                    while (true) {
+                        long remaining = channel.LastRequest + channel.DebounceMs - Environment.TickCount64;
+                        if (remaining <= 0) break;
+                        Monitor.Wait(channel.Sync, (int)Math.Min(remaining, 1000));
+                    }
+
+                    channel.HasPending = false;
+                    level = channel.Level;
+                    target = channel.Target;
+                }
+
+                try { NativeMethods.SetVCPFeature(target.Handle, VCP_BRIGHTNESS, (uint)level); } catch { }
+            }
+        }
+
+        // ================== WMI：独占线程 + 复用 COM 对象 ==================
+        private static readonly object _wmiLock = new object();
+        private static readonly AutoResetEvent _wmiSignal = new AutoResetEvent(false);
+        private static Thread? _wmiThread;
+        private static int _wmiPendingLevel;
+        private static bool _wmiPending;
+
+        private static void QueueWmiBrightness(int level) {
+            lock (_wmiLock) {
+                _wmiPendingLevel = level;
+                _wmiPending = true;
+                if (_wmiThread == null) {
+                    _wmiThread = new Thread(WmiWorkerLoop) { IsBackground = true, Name = "WmiBrightnessWriter" };
+                    _wmiThread.Start();
+                }
+            }
+            _wmiSignal.Set();
+        }
+
+        private static void WmiWorkerLoop() {
+            ManagementObject? method = null;
+            ManagementObjectCollection? collection = null;
+            ManagementObjectSearcher? searcher = null;
+
+            while (true) {
+                _wmiSignal.WaitOne();
+
+                int level;
+                lock (_wmiLock) {
+                    if (!_wmiPending) continue;
+                    _wmiPending = false;
+                    level = _wmiPendingLevel;
+                }
+
+                try {
+                    if (method == null) {
+                        searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightnessMethods");
+                        collection = searcher.Get();
+                        foreach (ManagementObject m in collection) { method = m; break; }
+                    }
+                    method?.InvokeMethod("WmiSetBrightness", new object[] { 1, level });
+                } catch {
+                    // COM 对象失效（唤醒/驱动重载）时丢弃缓存，下次重建
+                    method?.Dispose();
+                    method = null;
+                    collection = null;
+                    searcher?.Dispose();
+                    searcher = null;
+                }
+            }
+        }
+
+        public static int GetWmiBrightness() {
+            try {
+                using var searcher = new ManagementObjectSearcher("root\\Wmi", "SELECT * FROM WmiMonitorBrightness");
+                foreach (ManagementObject obj in searcher.Get()) {
+                    var val = obj["CurrentBrightness"];
+                    if (val != null && int.TryParse(val.ToString(), out int current)) return current;
+                }
+            } catch { }
+            return -1;
         }
 
         public static void SetPowerState(MonitorInfo monitor, bool turnOn, int? powerOffMode = null) { 
@@ -1138,9 +1396,26 @@ namespace SimpleBrightness
         public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); 
         public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 
         public Dictionary<string, int> SavedBrightness { get; set; } = new Dictionary<string, int>();
-        private static string ConfigPath = Path.Combine(Application.StartupPath, "HMSimpleBrightness_Config.json"); 
-        public static AppConfig Load() { if (File.Exists(ConfigPath)) { try { return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath)) ?? new AppConfig(); } catch { } } return new AppConfig(); } 
-        public void Save() { try { File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this)); } catch { } } 
+        private static readonly string ConfigPath = Path.Combine(Application.StartupPath, "HMSimpleBrightness_Config.json"); 
+        public static AppConfig Load() { if (File.Exists(ConfigPath)) { try { return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath)) ?? new AppConfig(); } catch { } } return new AppConfig(); }
+        /// <summary>
+        /// 原子写入配置：先写临时文件再替换，避免写一半时断电/被杀导致 JSON 损坏。
+        /// 保存失败时返回 false 并带出错误信息，便于界面提示而不是静默丢失修改。
+        /// </summary>
+        public bool SaveChecked(out string error) {
+            error = "";
+            try {
+                string json = JsonSerializer.Serialize(this);
+                string tempPath = ConfigPath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                File.Move(tempPath, ConfigPath, true);
+                return true;
+            } catch (Exception ex) {
+                error = ex.Message;
+                return false;
+            }
+        }
+        public void Save() { SaveChecked(out _); }
     }
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }

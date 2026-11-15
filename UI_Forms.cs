@@ -186,6 +186,70 @@ namespace SimpleBrightness
         }
     }
     
+    // ================== DPI 缩放辅助 ==================
+    public static class DpiUtil
+    {
+        [DllImport("shcore.dll")]
+        private static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromPoint(Point pt, uint dwFlags);
+
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+        private const int MDT_EFFECTIVE_DPI = 0;
+
+        /// <summary>取指定屏幕的有效 DPI，失败时回退到系统 DPI</summary>
+        public static int GetDpi(Screen screen)
+        {
+            try
+            {
+                var center = new Point(screen.Bounds.Left + screen.Bounds.Width / 2,
+                                       screen.Bounds.Top + screen.Bounds.Height / 2);
+                IntPtr hMonitor = MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST);
+                if (hMonitor != IntPtr.Zero &&
+                    GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, out uint dpiX, out _) == 0 && dpiX > 0)
+                {
+                    return (int)dpiX;
+                }
+            }
+            catch { }
+
+            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                return (int)Math.Round(g.DpiX);
+        }
+
+        public static float Scale(Screen screen) => GetDpi(screen) / 96f;
+
+        public static int ScalePx(Screen screen, int px) => (int)Math.Round(px * Scale(screen));
+    }
+
+    /// <summary>
+    /// 统一启用 Per-Monitor DPI 自动缩放的基础窗体。
+    /// 普通子控件（Label/Slider/Button…）的尺寸与坐标由 WinForms 自动等比换算，
+    /// 自绘控件内部再用 DeviceDpi 换算自己的绘制常量。
+    /// </summary>
+    public class DpiForm : Form
+    {
+        public DpiForm()
+        {
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+
+            // 高缩放下固定尺寸窗口可能超出工作区，先限制到当前屏幕内
+            if (AutoSize || WindowState != FormWindowState.Normal) return;
+            var workArea = Screen.FromControl(this).WorkingArea;
+            int width = Math.Min(Width, Math.Max(320, workArea.Width - 24));
+            int height = Math.Min(Height, Math.Max(240, workArea.Height - 24));
+            if (width != Width || height != Height)
+                Size = new Size(width, height);
+        }
+    }
+
     // ================== Dark Mode Scrollable Panel ==================
     public class DarkScrollPanel : Panel
     {
@@ -288,10 +352,11 @@ namespace SimpleBrightness
         private bool _isDragging = false;
         private Rectangle _trackRect;
         private Rectangle _thumbRect;
-        // Increased by 4px as requested: 20+4=24, 10+4=14
-        private const int ThumbOuterSize = 24;  // Outer circle size (was 20, now 24)
-        private const int ThumbInnerSize = 14;  // Inner circle size (was 10, now 14)
-        private const int TrackHeight = 6;      // 6px track like reference image
+        // 按当前 DPI 换算绘制常量（控件本身的尺寸由 WinForms 自动缩放）
+        private int ThumbOuterSize => S(24);
+        private int ThumbInnerSize => S(14);
+        private int TrackHeight => S(6);
+        private int S(int px) => (int)Math.Round(px * DeviceDpi / 96f);
         
         public event EventHandler? ValueChanged;
         public event EventHandler? Scroll;
@@ -343,11 +408,12 @@ namespace SimpleBrightness
         
         private void UpdateThumbPosition()
         {
-            int trackWidth = Width - ThumbOuterSize - 8;
+            int pad = S(4);
+            int trackWidth = Width - ThumbOuterSize - pad * 2;
             float ratio = _maximum > _minimum ? (float)(_value - _minimum) / (_maximum - _minimum) : 0;
-            int thumbX = (int)(4 + ratio * trackWidth);
+            int thumbX = (int)(pad + ratio * Math.Max(0, trackWidth));
             _thumbRect = new Rectangle(thumbX, (Height - ThumbOuterSize) / 2, ThumbOuterSize, ThumbOuterSize);
-            _trackRect = new Rectangle(4, (Height - TrackHeight) / 2, Width - 8, TrackHeight);
+            _trackRect = new Rectangle(pad, (Height - TrackHeight) / 2, Math.Max(0, Width - pad * 2), TrackHeight);
         }
         
         protected override void OnPaint(PaintEventArgs e)
@@ -471,10 +537,19 @@ namespace SimpleBrightness
         
         private void UpdateValueFromPosition(int x)
         {
-            int trackWidth = Width - ThumbOuterSize - 8;
-            float ratio = (float)(x - 4) / trackWidth;
+            int pad = S(4);
+            int trackWidth = Width - ThumbOuterSize - pad * 2;
+            if (trackWidth <= 0) return;
+            float ratio = (float)(x - pad) / trackWidth;
             ratio = Math.Clamp(ratio, 0, 1);
             Value = (int)(Minimum + ratio * (Maximum - Minimum));
+        }
+
+        protected override void OnDpiChangedAfterParent(EventArgs e)
+        {
+            base.OnDpiChangedAfterParent(e);
+            UpdateThumbPosition();
+            Invalidate();
         }
         
         protected override void OnSizeChanged(EventArgs e)
@@ -514,13 +589,19 @@ namespace SimpleBrightness
             
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var brush = new SolidBrush(backColor))
-            using (var path = GetRoundedRect(rect, 4))
+            using (var path = GetRoundedRect(rect, Math.Max(2, (int)Math.Round(4 * DeviceDpi / 96f))))
             {
                 g.FillPath(brush, path);
             }
             
             TextRenderer.DrawText(g, Text, Font, rect, ForeColor, 
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
+
+        protected override void OnDpiChangedAfterParent(EventArgs e)
+        {
+            base.OnDpiChangedAfterParent(e);
+            Invalidate();
         }
         
         private GraphicsPath GetRoundedRect(Rectangle rect, int radius)
@@ -680,14 +761,17 @@ namespace SimpleBrightness
     // ================== Native Windows Style OSD (Multiple Monitors Support) ==================
     public class NativeOsdForm : Form
     {
-        private System.Windows.Forms.Timer _timer;
+        private readonly System.Windows.Forms.Timer _timer;
         private List<MonitorInfo> _monitors;
-        private int _displayIndex = 0;
+        private float _scale = 1f;
         
         // Colors that adapt to theme
         private Color _bgColor => ThemeManager.IsDarkMode ? Color.FromArgb(40, 40, 40) : Color.FromArgb(240, 240, 240);
         private Color _textColor => ThemeManager.IsDarkMode ? Color.FromArgb(255, 255, 255) : Color.FromArgb(0, 0, 0);
         private Color _trackColor => ThemeManager.IsDarkMode ? Color.FromArgb(80, 80, 80) : Color.FromArgb(200, 200, 200);
+
+        // OSD 内部全部按屏幕 DPI 换算；禁用 WinForms 自动缩放避免双重缩放
+        private int S(int px) => (int)Math.Round(px * _scale);
         
         public NativeOsdForm(List<MonitorInfo> monitors)
         {
@@ -697,12 +781,9 @@ namespace SimpleBrightness
             this.TopMost = true;
             this.DoubleBuffered = true;
             this.StartPosition = FormStartPosition.Manual;
-            
-            // Dynamic size based on number of monitors with proper spacing
-            int itemHeight = 50;  // Increased for better spacing
-            int padding = 20;
-            int totalHeight = padding * 2 + (_monitors.Count * itemHeight);
-            this.Size = new Size(290, Math.Max(100, totalHeight));
+            this.AutoScaleMode = AutoScaleMode.None;
+
+            ApplyLayoutForScreen(Screen.FromPoint(Cursor.Position));
             
             _timer = new System.Windows.Forms.Timer { Interval = 2000 };
             _timer.Tick += (s, e) => this.Hide();
@@ -710,31 +791,75 @@ namespace SimpleBrightness
 
         protected override bool ShowWithoutActivation => true;
 
+        public void UpdateMonitors(List<MonitorInfo> monitors)
+        {
+            _monitors = monitors;
+        }
+
+        private void ApplyLayoutForScreen(Screen screen)
+        {
+            _scale = DpiUtil.Scale(screen);
+            int itemHeight = S(6) + S(24);   // 与 OnPaint 中的 itemHeight 保持一致
+            int monitorGap = S(16);
+            int padding = S(20);
+            int width = S(290);
+            int count = Math.Max(1, _monitors.Count);
+            int contentHeight = count * itemHeight + Math.Max(0, count - 1) * monitorGap;
+            int height = Math.Max(S(100), contentHeight + padding * 2);
+            this.Size = new Size(width, height);
+        }
+
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            // Apply rounded corners
-            if (Windows11Style.IsWindows11())
+            ApplyWindowCorners();
+        }
+
+        // 用 GraphicsPath 生成 Region，避免 CreateRoundRectRgn 的 GDI 句柄泄漏
+        private void ApplyWindowCorners()
+        {
+            try
             {
-                int corner = 2;
-                NativeMethods.DwmSetWindowAttribute(this.Handle, 33, ref corner, sizeof(int));
+                if (Windows11Style.IsWindows11())
+                {
+                    int corner = 2;
+                    NativeMethods.DwmSetWindowAttribute(this.Handle, 33, ref corner, sizeof(int));
+                }
+
+                int radius = Math.Max(2, S(8));
+                using (var path = new GraphicsPath())
+                {
+                    int d = radius * 2;
+                    var rect = new Rectangle(0, 0, Width, Height);
+                    path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                    path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+                    path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+                    path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+                    path.CloseFigure();
+
+                    var old = this.Region;
+                    this.Region = new Region(path);
+                    old?.Dispose();
+                }
             }
-            this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
+            catch { }
         }
 
         public void ShowForMonitor(int monitorIndex)
         {
-            _displayIndex = monitorIndex;
             var screen = Screen.FromPoint(Cursor.Position);
+            ApplyLayoutForScreen(screen);
+            ApplyWindowCorners();
             
-            // Position at bottom center of screen like Windows OSD
+            // Position at bottom center of screen like Windows OSD（物理像素 + DPI 换算间距）
             this.Location = new Point(
                 screen.Bounds.X + (screen.Bounds.Width - Width) / 2,
-                screen.Bounds.Bottom - Height - 100
+                screen.Bounds.Bottom - Height - S(100)
             );
 
             if (!this.Visible) this.Show();
-            this.Refresh();
+            // 用 Invalidate 让连续滚轮合并成一次绘制
+            this.Invalidate();
             _timer.Stop();
             _timer.Start();
         }
@@ -742,9 +867,15 @@ namespace SimpleBrightness
         public void UpdateDisplay()
         {
             if (!this.Visible) this.Show();
-            this.Refresh();
+            this.Invalidate();
             _timer.Stop();
             _timer.Start();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _timer?.Dispose();
+            base.Dispose(disposing);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -769,14 +900,14 @@ namespace SimpleBrightness
 
             if (_monitors.Count == 0) return;
             
-            // Auto-calculate layout with equal margins
-            int barHeight = 6;           // Progress bar height
-            int margin = 20;             // Equal margin on left and right
-            int leftIconPadding = 6;     // Extra padding on left of icon
-            int elementGap = 12;         // Gap between icon/bar/value
-            int iconWidth = 24;          // Width allocated for icon
-            int monitorGap = 16;         // Gap between monitors
-            int valWidth = 36;           // Width for value text
+            // Auto-calculate layout with equal margins（全部按屏幕 DPI 换算）
+            int barHeight = S(6);            // Progress bar height
+            int margin = S(20);              // Equal margin on left and right
+            int leftIconPadding = S(6);      // Extra padding on left of icon
+            int elementGap = S(12);          // Gap between icon/bar/value
+            int iconWidth = S(24);           // Width allocated for icon
+            int monitorGap = S(16);          // Gap between monitors
+            int valWidth = S(36);            // Width for value text
             
             // Calculate available width with equal left/right margins
             int availableContentWidth = this.Width - (margin * 2);
@@ -784,28 +915,19 @@ namespace SimpleBrightness
             int barWidth = availableContentWidth - leftIconPadding - iconWidth - totalGaps - valWidth;
             
             // Calculate positions - equal left/right margins
-            int iconX = margin + leftIconPadding - 4;  // 图标左移4px
-            int barLeft = iconX + iconWidth + elementGap + 3;  // 滑块中心点右移3px
-            int valX = barLeft + barWidth + elementGap + 10;  // 数值右移10px
-            barWidth += 6;  // 滑块延长6px
+            int iconX = margin + leftIconPadding - S(4);  // 图标左移4px
+            int barLeft = iconX + iconWidth + elementGap + S(3);  // 滑块中心点右移3px
+            int valX = barLeft + barWidth + elementGap + S(10);  // 数值右移10px
+            barWidth += S(6);  // 滑块延长6px
             
             // Auto-calculate item height with generous padding
-            int itemHeight = barHeight + 24;  // 12px padding top and bottom
+            int itemHeight = barHeight + S(24);  // 12px padding top and bottom
             
-            // Auto-calculate OSD height based on content with monitor gaps
+            // Calculate OSD height based on content with monitor gaps（尺寸已在 ShowForMonitor 里设置好）
             int totalContentHeight = (_monitors.Count * itemHeight) + ((_monitors.Count - 1) * monitorGap);
-            int osdHeight = totalContentHeight + (margin * 2);
             
-            // Resize OSD if needed (only if significantly different)
-            if (Math.Abs(this.Height - osdHeight) > 10)
-            {
-                this.Height = osdHeight;
-                // Recalculate region for rounded corners
-                this.Region = Region.FromHrgn(NativeMethods.CreateRoundRectRgn(0, 0, Width, Height, 8, 8));
-            }
-            
-            // Starting Y with equal margin
-            int startY = margin;
+            // Starting Y with equal margin（内容整体垂直居中）
+            int startY = Math.Max(margin, (this.Height - totalContentHeight) / 2);
             
             // Icon font for brightness symbol - use EC8A icon
             using (Font iconFont = new Font("Segoe MDL2 Assets", 13, FontStyle.Regular))
@@ -826,7 +948,7 @@ namespace SimpleBrightness
                     // Draw brightness icon - use EC8A, vertically centered (moved down 1px)
                     Size iconTextSize = TextRenderer.MeasureText("\uEC8A", iconFont);
                     int iconDrawX = iconX + (iconWidth - iconTextSize.Width) / 2;  // Center in iconWidth space
-                    int iconDrawY = centerY - iconTextSize.Height / 2 + 1;  // Vertically center with bar, +1px down
+                    int iconDrawY = centerY - iconTextSize.Height / 2 + S(1);  // Vertically center with bar, +1px down
                     TextRenderer.DrawText(g, "\uEC8A", iconFont, new Point(iconDrawX, iconDrawY), _textColor);
 
                     // Progress bar - 6px height with rounded corners
@@ -878,7 +1000,7 @@ namespace SimpleBrightness
     }
 
     // ================== HelpForm ==================
-    public class HelpForm : Form {
+    public class HelpForm : DpiForm {
         public HelpForm() {
             this.Text = "使用说明";
             this.Size = new Size(520, 440); 
@@ -945,7 +1067,7 @@ namespace SimpleBrightness
     }
 
     // ================== SettingsForm (with Scroll Support and Theme Selection) ==================
-    public class SettingsForm : Form {
+    public class SettingsForm : DpiForm {
         public bool HotkeysChanged { get; private set; } = false;
         public string NewHotkeyIncrease { get; private set; } = "";
         public string NewHotkeyDecrease { get; private set; } = "";
@@ -1246,7 +1368,7 @@ namespace SimpleBrightness
     }
 
     // ================== BrightnessForm (Control Center) ==================
-    public class BrightnessForm : Form
+    public class BrightnessForm : DpiForm
     {
         private List<MonitorInfo> _monitors; 
         private AppConfig _config; 
@@ -1429,7 +1551,7 @@ namespace SimpleBrightness
                         Text = "编辑曲线", 
                         Size = new Size(110, 36)
                     }; 
-                    btnCurve.Click += (s, e) => { var editor = new CurveEditorForm(m, _config); editor.Show(this); }; 
+                    btnCurve.Click += (s, e) => { var editor = new CurveEditorForm(m, _config, _context); editor.Show(this); }; 
                     btnRow.Controls.Add(btnCurve); 
                     
                     Win11Button btnPower = new Win11Button { 
@@ -1461,10 +1583,11 @@ namespace SimpleBrightness
         protected override void OnLoad(EventArgs e) { 
             base.OnLoad(e); 
             var screen = Screen.FromPoint(Cursor.Position); 
-            int x = screen.WorkingArea.Right - this.Width - 10; 
-            int y = screen.WorkingArea.Bottom - this.Height - 10; 
-            if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + 50; 
-            if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + 10; 
+            int margin = DpiUtil.ScalePx(screen, 10);
+            int x = screen.WorkingArea.Right - this.Width - margin; 
+            int y = screen.WorkingArea.Bottom - this.Height - margin; 
+            if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + DpiUtil.ScalePx(screen, 50); 
+            if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + margin; 
             this.Location = new Point(x, y); 
         }
         
@@ -1475,7 +1598,7 @@ namespace SimpleBrightness
                 if (input.ShowDialog() == DialogResult.OK) { 
                     _config.CustomNames[m.UniqueId] = input.ResultText; 
                     _config.Save(); 
-                    _context.RefreshMonitors(); 
+                    _context.ReloadMonitorsSafe();
                     this.Close(); 
                 } 
             }); 
@@ -1488,6 +1611,7 @@ namespace SimpleBrightness
         }
         
         public void UpdateSlider(string id, int val) { 
+            if (IsDisposed) return;
             if (_sliders.ContainsKey(id)) { 
                 _sliders[id].Value = val; 
                 _valLabels[id].Text = val + "%"; 
@@ -1519,16 +1643,19 @@ namespace SimpleBrightness
     }
 
     // ================== CurveEditorForm (Visual Graph Version) ==================
-    public class CurveEditorForm : Form {
+    public class CurveEditorForm : DpiForm {
         private MonitorInfo _monitor;
         private AppConfig _config;
+        private MyCustomApplicationContext? _context;
         private Dictionary<int, int> _points;
+        private Dictionary<int, int> _savedPoints = new Dictionary<int, int>();
         private CurveGraphControl _graph;
         private ToolTip _tooltip;
         private bool _showMinMaxUnlock = false;
+        private bool _isClosing = false;
         
         private Dictionary<int, int> GetCurveWithFallback() {
-            if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve)) return curve;
+            if (_config.Curves.TryGetValue(_monitor.UniqueId, out var curve) && curve.Count >= 2) return curve;
             
             if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
                 string[] parts = _monitor.UniqueId.Split('_');
@@ -1536,7 +1663,7 @@ namespace SimpleBrightness
                     string nameHash = parts[1];
                     string idxStr = parts[parts.Length - 1];
                     string oldId = $"DDC_{nameHash}_IDX_{idxStr}";
-                    if (_config.Curves.TryGetValue(oldId, out var oldCurve)) {
+                    if (_config.Curves.TryGetValue(oldId, out var oldCurve) && oldCurve.Count >= 2) {
                         _config.Curves[_monitor.UniqueId] = oldCurve;
                         return oldCurve;
                     }
@@ -1545,6 +1672,7 @@ namespace SimpleBrightness
                     foreach (var curveId in curveKeys) {
                         if (curveId.StartsWith($"DDC_{nameHash}_H") && curveId != _monitor.UniqueId) {
                             var savedCurve = _config.Curves[curveId];
+                            if (savedCurve.Count < 2) continue;
                             _config.Curves[_monitor.UniqueId] = savedCurve;
                             return savedCurve;
                         }
@@ -1554,9 +1682,10 @@ namespace SimpleBrightness
             return new Dictionary<int, int> { { 0, 0 }, { 100, 100 } };
         }
         
-        public CurveEditorForm(MonitorInfo monitor, AppConfig config) {
+        public CurveEditorForm(MonitorInfo monitor, AppConfig config, MyCustomApplicationContext? context = null) {
             _monitor = monitor;
             _config = config;
+            _context = context;
             _points = new Dictionary<int, int>(GetCurveWithFallback());
             _tooltip = new ToolTip();
             
@@ -1813,18 +1942,7 @@ namespace SimpleBrightness
             };
             
             saveBtn.Click += (s, e) => {
-                _config.Curves[_monitor.UniqueId] = new Dictionary<int, int>(_points);
-                if (_monitor.UniqueId.StartsWith("DDC_") && _monitor.UniqueId.Contains("_H")) {
-                    string[] parts = _monitor.UniqueId.Split('_');
-                    if (parts.Length >= 4) {
-                        string nameHash = parts[1];
-                        string idxStr = parts[parts.Length - 1];
-                        string oldId = $"DDC_{nameHash}_IDX_{idxStr}";
-                        _config.Curves.Remove(oldId);
-                    }
-                }
-                _config.Save();
-                this.Close();
+                if (SaveCurve()) this.Close();
             };
             
             chkUnlock.CheckedChanged += (s, e) => {
@@ -1856,8 +1974,8 @@ namespace SimpleBrightness
             };
             
             _graph.ActionUndone += () => {
-                if (_graph.SelectedPoint.HasValue) {
-                    lblSelectedValue.Text = $"输入{_graph.SelectedPoint.Value}% → 输出{_points[_graph.SelectedPoint.Value]}%";
+                if (_graph.SelectedPoint.HasValue && _points.TryGetValue(_graph.SelectedPoint.Value, out int value)) {
+                    lblSelectedValue.Text = $"输入{_graph.SelectedPoint.Value}% → 输出{value}%";
                 } else {
                     lblSelectedValue.Text = "无";
                 }
@@ -1865,6 +1983,79 @@ namespace SimpleBrightness
             
             if (!_points.ContainsKey(0)) _points[0] = 0;
             if (!_points.ContainsKey(100)) _points[100] = 100;
+            _savedPoints = new Dictionary<int, int>(_points);
+        }
+
+        /// <summary>
+        /// 保存曲线：优先写到“当前”显示器 ID（句柄可能已经变化），并清理同名旧 ID，
+        /// 避免出现“保存成功但主界面仍然读旧曲线”的情况。
+        /// </summary>
+        private bool SaveCurve()
+        {
+            EnsureEndpoints();
+
+            string targetId = _monitor.UniqueId;
+            if (_context != null) {
+                var current = _context.FindMonitorByUniqueIdOrHash(_monitor.UniqueId);
+                if (current != null) {
+                    _monitor = current;
+                    targetId = current.UniqueId;
+                }
+            }
+
+            _config.Curves[targetId] = new Dictionary<int, int>(_points);
+
+            // 清理旧版 ID 格式（DDC_hash_IDX_i），避免迁移逻辑把旧曲线搬回来。
+            // 注意：不要删除同 nameHash 的其他 _H 条目，同型号显示器可能共用名称哈希。
+            if (targetId.StartsWith("DDC_") && targetId.Contains("_H")) {
+                string[] parts = targetId.Split('_');
+                if (parts.Length >= 4) {
+                    _config.Curves.Remove($"DDC_{parts[1]}_IDX_{parts[parts.Length - 1]}");
+                }
+            }
+
+            if (!_config.SaveChecked(out string error)) {
+                MessageBox.Show(this, "曲线保存失败：" + error, "保存失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            _savedPoints = new Dictionary<int, int>(_points);
+
+            // 立即按新曲线重新应用到硬件，用户能马上看到效果（关闭窗口时跳过，避免与重扫冲突）
+            if (!_isClosing) {
+                try { _context?.ReapplyBrightness(_monitor); } catch { }
+            }
+            return true;
+        }
+
+        private void EnsureEndpoints()
+        {
+            // 仅在曲线为空时补默认端点；解锁后用户移动过 0/100 节点时不要强行加回来
+            if (_points.Count == 0) {
+                _points[0] = 0;
+                _points[100] = 100;
+            }
+        }
+
+        private bool IsDirty()
+        {
+            if (_savedPoints.Count != _points.Count) return true;
+            foreach (var kv in _points) {
+                if (!_savedPoints.TryGetValue(kv.Key, out int saved) || saved != kv.Value) return true;
+            }
+            return false;
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // 没点“保存并生效”直接关窗口时自动保存，避免修改丢失
+            _isClosing = true;
+            if (IsDirty() && !SaveCurve()) {
+                _isClosing = false;
+                e.Cancel = true;
+                return;
+            }
+            base.OnFormClosing(e);
         }
     }
     
@@ -1879,10 +2070,14 @@ namespace SimpleBrightness
         private Point _dragStartPos;
         private int _lastDragX = 0; // Store last drag position for preview
         private int _lastDragY = 0;
-        private const int PointRadius = 6;
-        private const int HitRadius = 12;
-        private const int DragThreshold = 5; // Pixels to start dragging
-        private int _padding = 66; // Increased from 60 to fix Y-axis label overlap
+        private bool _dragMoved = false;      // 本次按下是否真的拖动过
+        private bool _suppressClick = false;  // 拖拽结束后不要误触发“添加节点”
+        // 自绘常量按控件 DPI 换算
+        private int S(int px) => (int)Math.Round(px * DeviceDpi / 96f);
+        private int PointRadius => S(6);
+        private int HitRadius => S(12);
+        private int DragThreshold => S(5);
+        private int Pad => S(66);
         
         // Undo stack
         private Stack<Dictionary<int, int>> _undoStack = new Stack<Dictionary<int, int>>();
@@ -1961,10 +2156,11 @@ namespace SimpleBrightness
             // Background
             g.Clear(BackColor);
             
-            int width = this.Width - _padding * 2;
-            int height = this.Height - _padding * 2;
-            int left = _padding;
-            int top = _padding;
+            int width = this.Width - Pad * 2;
+            int height = this.Height - Pad * 2;
+            if (width <= 0 || height <= 0) return;
+            int left = Pad;
+            int top = Pad;
             int right = left + width;
             int bottom = top + height;
             
@@ -1988,11 +2184,11 @@ namespace SimpleBrightness
                     using (Brush brush = new SolidBrush(ThemeManager.TextSecondary)) {
                         // X axis labels (0-100 from left to right)
                         SizeF size = g.MeasureString(label, font);
-                        g.DrawString(label, font, brush, x - size.Width / 2, bottom + 5);
+                        g.DrawString(label, font, brush, x - size.Width / 2, bottom + S(5));
                         
                         // Y axis labels (0-100 from bottom to top)
                         size = g.MeasureString(label, font);
-                        g.DrawString(label, font, brush, left - size.Width - 5, y - size.Height / 2);
+                        g.DrawString(label, font, brush, left - size.Width - S(5), y - size.Height / 2);
                     }
                 }
                 
@@ -2005,12 +2201,12 @@ namespace SimpleBrightness
             using (Font titleFont = new Font("Segoe UI", 9, FontStyle.Bold))
             using (Brush titleBrush = new SolidBrush(ThemeManager.Text)) {
                 // X axis title
-                g.DrawString("输入亮度 (%)", titleFont, titleBrush, left + width / 2 - 40, bottom + 25);
+                g.DrawString("输入亮度 (%)", titleFont, titleBrush, left + width / 2 - S(40), bottom + S(25));
                 
                 // Y axis title (rotated)
-                g.TranslateTransform(15, top + height / 2);
+                g.TranslateTransform(S(15), top + height / 2);
                 g.RotateTransform(-90);
-                g.DrawString("输出亮度 (%)", titleFont, titleBrush, -40, 0);
+                g.DrawString("输出亮度 (%)", titleFont, titleBrush, -S(40), 0);
                 g.ResetTransform();
             }
             
@@ -2044,7 +2240,7 @@ namespace SimpleBrightness
                 
                 using (Brush brush = new SolidBrush(pointColor))
                 using (Pen pen = new Pen(isHovered ? Color.White : pointColor, isHovered ? 2 : 1)) {
-                    int r = isHovered ? PointRadius + 2 : PointRadius;
+                    int r = isHovered ? PointRadius + S(2) : PointRadius;
                     g.FillEllipse(brush, px - r, py - r, r * 2, r * 2);
                     g.DrawEllipse(pen, px - r, py - r, r * 2, r * 2);
                 }
@@ -2055,7 +2251,7 @@ namespace SimpleBrightness
                     using (Brush brush = new SolidBrush(ThemeManager.Text)) {
                         string text = $"({point.Key}, {point.Value})";
                         SizeF size = g.MeasureString(text, font);
-                        g.DrawString(text, font, brush, px - size.Width / 2, py - 25);
+                        g.DrawString(text, font, brush, px - size.Width / 2, py - S(25));
                     }
                 }
             }
@@ -2066,27 +2262,36 @@ namespace SimpleBrightness
             }
         }
         
-        protected override void OnMouseMove(MouseEventArgs e) {
-            base.OnMouseMove(e);
-            
-            int width = this.Width - _padding * 2;
-            int height = this.Height - _padding * 2;
-            int left = _padding;
-            int top = _padding;
-            int bottom = top + height;
-            
-            int? newHovered = null;
-            
+        private int? HitTestPoint(Point location)
+        {
+            int width = this.Width - Pad * 2;
+            int height = this.Height - Pad * 2;
+            if (width <= 0 || height <= 0) return null;
+
+            int left = Pad;
+            int bottom = Pad + height;
+
             foreach (var point in _points) {
                 int px = left + (width * point.Key / 100);
                 int py = bottom - (height * point.Value / 100);
-                
-                double dist = Math.Sqrt(Math.Pow(e.X - px, 2) + Math.Pow(e.Y - py, 2));
-                if (dist <= HitRadius) {
-                    newHovered = point.Key;
-                    break;
-                }
+                double dist = Math.Sqrt(Math.Pow(location.X - px, 2) + Math.Pow(location.Y - py, 2));
+                if (dist <= HitRadius) return point.Key;
             }
+            return null;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e) {
+            base.OnMouseMove(e);
+            
+            int width = this.Width - Pad * 2;
+            int height = this.Height - Pad * 2;
+            if (width <= 0 || height <= 0) return;
+
+            int left = Pad;
+            int top = Pad;
+            int bottom = top + height;
+            
+            int? newHovered = HitTestPoint(e.Location);
             
             if (_hoveredPoint != newHovered) {
                 _hoveredPoint = newHovered;
@@ -2102,16 +2307,17 @@ namespace SimpleBrightness
                 
                 bool isFixed = (_selectedPoint == 0 || _selectedPoint == 100);
                 if (!isFixed || ShowMinMaxEdit) {
-                    // Calculate new position
                     int newX = Math.Max(0, Math.Min(100, (e.X - left) * 100 / width));
                     int newY = Math.Max(0, Math.Min(100, (bottom - e.Y) * 100 / height));
-                    
-                    // Store last position for preview on mouse up
+                    int oldX = _selectedPoint.Value;
+
+                    // 目标 X 上已有别的节点时不要覆盖（否则用户会看到节点“消失”）
+                    if (newX != oldX && _points.ContainsKey(newX)) return;
+
                     _lastDragX = newX;
                     _lastDragY = newY;
-                    
-                    // Remove old point and add new one
-                    int oldX = _selectedPoint.Value;
+                    _dragMoved = true;
+
                     _points.Remove(oldX);
                     _points[newX] = newY;
                     _selectedPoint = newX;
@@ -2125,14 +2331,22 @@ namespace SimpleBrightness
         protected override void OnMouseDown(MouseEventArgs e) {
             base.OnMouseDown(e);
             this.Focus(); // Take focus for keyboard events
-            
-            if (_hoveredPoint.HasValue) {
-                // Select the point and enable dragging immediately
-                _selectedPoint = _hoveredPoint;
-                _isDragging = true;
-                _dragStartPos = e.Location;
-                // Save state for undo when starting to drag
-                SaveStateForUndo();
+
+            _dragMoved = false;
+            _suppressClick = false;
+
+            // 点击时重新命中测试，避免依赖上一次 MouseMove 的 hover 结果
+            int? hit = HitTestPoint(e.Location);
+            _hoveredPoint = hit;
+
+            if (hit.HasValue) {
+                _selectedPoint = hit;
+                if (e.Button == MouseButtons.Left) {
+                    _isDragging = true;
+                    _dragStartPos = e.Location;
+                    // Save state for undo when starting to drag
+                    SaveStateForUndo();
+                }
                 PointSelected?.Invoke(_selectedPoint.Value, _points[_selectedPoint.Value]);
                 this.Invalidate();
             } else {
@@ -2145,14 +2359,13 @@ namespace SimpleBrightness
         protected override void OnMouseUp(MouseEventArgs e) {
             base.OnMouseUp(e);
             
-            // If we were dragging, save state for undo and apply preview
             if (_isDragging) {
-                SaveStateForUndo();
-                
-                // Apply preview on mouse up if enabled
-                if (EnablePreview) {
+                // 撤销点在 MouseDown 时已经压栈，这里只处理预览
+                if (EnablePreview && _dragMoved) {
                     ApplyPreview(_lastDragX, _lastDragY);
                 }
+                // 拖拽结束后的 MouseClick 不应该再当作“空白处添加节点”
+                if (_dragMoved) _suppressClick = true;
             }
             
             _isDragging = false;
@@ -2160,6 +2373,11 @@ namespace SimpleBrightness
         
         protected override void OnMouseClick(MouseEventArgs e) {
             base.OnMouseClick(e);
+
+            if (_suppressClick) {
+                _suppressClick = false;
+                return;
+            }
             
             if (e.Button == MouseButtons.Right && _hoveredPoint.HasValue) {
                 bool isFixed = (_hoveredPoint == 0 || _hoveredPoint == 100);
@@ -2170,10 +2388,12 @@ namespace SimpleBrightness
             }
             else if (e.Button == MouseButtons.Left && !_hoveredPoint.HasValue && !_isDragging) {
                 // Left click on empty space - add new point
-                int width = this.Width - _padding * 2;
-                int height = this.Height - _padding * 2;
-                int left = _padding;
-                int top = _padding;
+                int width = this.Width - Pad * 2;
+                int height = this.Height - Pad * 2;
+                if (width <= 0 || height <= 0) return;
+
+                int left = Pad;
+                int top = Pad;
                 int bottom = top + height;
                 
                 // Calculate grid position
@@ -2201,10 +2421,16 @@ namespace SimpleBrightness
                 }
             }
         }
+
+        protected override void OnDpiChangedAfterParent(EventArgs e)
+        {
+            base.OnDpiChangedAfterParent(e);
+            this.Invalidate();
+        }
     }
 
     // ================== InputBox ==================
-    public class InputBox : Form {
+    public class InputBox : DpiForm {
         public string ResultText { get; private set; } = "";
         
         public InputBox(string title, string prompt, string defaultText) {
