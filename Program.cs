@@ -84,7 +84,7 @@ namespace SimpleBrightness
             RegisterSystemEvents();
 
             contextMenu = new ContextMenuStrip();
-            contextMenu.Font = new Font("Segoe UI", 9.5f);
+            contextMenu.Font = new Font("Segoe UI", 9f);
             contextMenu.Padding = new Padding(0, 4, 0, 4);
             contextMenu.ShowItemToolTips = true;
             // Win11 圆角菜单
@@ -116,8 +116,8 @@ namespace SimpleBrightness
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
 
-            // 版本号只显示 vX.Y.Z；完整构建号放在悬浮提示里
-            // Application.ProductVersion 在 CI 构建时可能是 "4.3.6+<commitHash>"，先去掉 +hash
+            // 版本号只显示 vX.Y.Z；完整版本（含 commitHash）放在悬浮提示里
+            // Application.ProductVersion 在 CI 构建时可能是 "4.5.0+<commitHash>"
             string fullVersion = Application.ProductVersion;
             string baseVersion = fullVersion.Split('+')[0];
             var versionParts = baseVersion.Split('.');
@@ -126,7 +126,7 @@ namespace SimpleBrightness
                 : baseVersion;
             contextMenu.Items.Add(new ToolStripMenuItem($"版本 v{shortVersion}") {
                 Enabled = false,
-                ToolTipText = $"完整版本 {Assembly.GetExecutingAssembly().GetName().Version}"
+                ToolTipText = $"完整版本 {fullVersion}"
             });
             
             contextMenu.Items.Add(new ToolStripSeparator());

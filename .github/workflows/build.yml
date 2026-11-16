@@ -42,7 +42,17 @@ jobs:
       run: |
         [xml]$proj = Get-Content -Raw SimpleBrightness.csproj
         $current = [version]$proj.Project.PropertyGroup.Version
-        $newVersion = "{0}.{1}.{2}" -f $current.Major, $current.Minor, ($current.Build + 1)
+        $notes = Get-Content -Raw BuildRelease.md
+        $match = [regex]::Match($notes, '本次更新\s*\(v(\d+)\.(\d+)\.(\d+)\)')
+        if ($match.Success) {
+          $newVersion = "$($match.Groups[1].Value).$($match.Groups[2].Value).$($match.Groups[3].Value)"
+        } else {
+          $newVersion = "{0}.{1}.{2}" -f $current.Major, $current.Minor, ($current.Build + 1)
+        }
+        # 防止重复发布同一个版本
+        if ([version]$newVersion -le $current) {
+          $newVersion = "{0}.{1}.{2}" -f $current.Major, $current.Minor, ($current.Build + 1)
+        }
         $proj.Project.PropertyGroup.Version = $newVersion
         $proj.Save((Resolve-Path SimpleBrightness.csproj))
         git config user.name "github-actions[bot]"
