@@ -116,12 +116,14 @@ namespace SimpleBrightness
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
 
-            // 版本号只显示 vX.Y.Z，完整构建号放在悬浮提示里
+            // 版本号只显示 vX.Y.Z；完整构建号放在悬浮提示里
+            // Application.ProductVersion 在 CI 构建时可能是 "4.3.6+<commitHash>"，先去掉 +hash
             string fullVersion = Application.ProductVersion;
-            var versionParts = fullVersion.Split('.');
+            string baseVersion = fullVersion.Split('+')[0];
+            var versionParts = baseVersion.Split('.');
             string shortVersion = versionParts.Length > 3
                 ? string.Join(".", versionParts.Take(3))
-                : fullVersion;
+                : baseVersion;
             contextMenu.Items.Add(new ToolStripMenuItem($"版本 v{shortVersion}") {
                 Enabled = false,
                 ToolTipText = $"完整版本 {Assembly.GetExecutingAssembly().GetName().Version}"
