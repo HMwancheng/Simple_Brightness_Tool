@@ -1669,7 +1669,7 @@ namespace SimpleBrightness
             public Rect rcWork;
             public uint dwFlags;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-            public string szDevice = "";
+            public string szDevice;
         }
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } 
         [StructLayout(LayoutKind.Sequential)]
