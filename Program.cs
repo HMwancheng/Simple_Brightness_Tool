@@ -1230,12 +1230,112 @@ namespace SimpleBrightness
                 }
             }
 
+            bool pruned = PruneLegacyAliases(detected);
+
             lock (_monitorsLock) {
                 monitors.Clear();
                 monitors.AddRange(detected);
             }
 
-            if (migratedNames) config.Save();
+            if (migratedNames || pruned) config.Save();
+        }
+
+        /// <summary>
+        /// 清理旧版因物理句柄变化留下的海量历史 ID。
+        /// 只在同一 nameHash 恰好对应一台“已检测到”的显示器、且别名数量明显异常（≥10）时执行，
+        /// 避免误伤两台同型号显示器的正常配置。
+        /// </summary>
+        private bool PruneLegacyAliases(List<MonitorInfo> detected)
+        {
+            bool changed = false;
+
+            var groups = detected
+                .Where(m => m.Type == MonitorType.DDC)
+                .GroupBy(m => {
+                    var parts = m.UniqueId.Split('_');
+                    return parts.Length >= 4 ? parts[1] : "";
+                })
+                .Where(g => g.Key.Length > 0 && g.Count() == 1);
+
+            foreach (var group in groups) {
+                var monitor = group.First();
+                string hash = group.Key;
+                string stableId = monitor.UniqueId;
+                string prefix = $"DDC_{hash}_";
+
+                int aliasCount = config.CustomNames.Keys.Count(k => k.StartsWith(prefix))
+                               + config.SavedBrightness.Keys.Count(k => k.StartsWith(prefix))
+                               + config.Curves.Keys.Count(k => k.StartsWith(prefix))
+                               + config.HiddenMonitors.Count(k => k.StartsWith(prefix));
+                if (aliasCount < 10) continue;
+
+                // 自定义名称：保留当前稳定 ID，删除其它别名
+                if (!config.CustomNames.ContainsKey(stableId)) {
+                    var alias = config.CustomNames.LastOrDefault(kv => kv.Key.StartsWith(prefix));
+                    if (alias.Key != null) {
+                        config.CustomNames[stableId] = alias.Value;
+                        monitor.Name = alias.Value;
+                        changed = true;
+                    }
+                }
+                foreach (var key in config.CustomNames.Keys.Where(k => k.StartsWith(prefix) && k != stableId).ToList()) {
+                    config.CustomNames.Remove(key);
+                    changed = true;
+                }
+
+                // 隐藏状态：只要任一别名被隐藏，就把稳定 ID 标记为隐藏
+                if (config.HiddenMonitors.Any(k => k != stableId && k.StartsWith(prefix))) {
+                    if (!config.HiddenMonitors.Contains(stableId)) config.HiddenMonitors.Add(stableId);
+                    config.HiddenMonitors.RemoveAll(k => k != stableId && k.StartsWith(prefix));
+                    changed = true;
+                }
+
+                // 亮度：取最后写入的别名（字典顺序即写入顺序，最后一条最接近当前使用值）
+                if (!config.SavedBrightness.ContainsKey(stableId)) {
+                    string? lastKey = config.SavedBrightness.Keys.LastOrDefault(k => k.StartsWith(prefix));
+                    if (lastKey != null) {
+                        config.SavedBrightness[stableId] = config.SavedBrightness[lastKey];
+                        changed = true;
+                    }
+                }
+                foreach (var key in config.SavedBrightness.Keys.Where(k => k.StartsWith(prefix) && k != stableId).ToList()) {
+                    config.SavedBrightness.Remove(key);
+                    changed = true;
+                }
+
+                // 曲线：优先采用“唯一不同”的编辑版本；否则仅在所有别名一致时迁移
+                if (!config.Curves.ContainsKey(stableId)) {
+                    var chosen = config.FindOutlierCurve(hash);
+                    if (chosen == null) {
+                        var aliasCurves = config.Curves
+                            .Where(kv => kv.Key.StartsWith(prefix))
+                            .Select(kv => kv.Value)
+                            .Where(c => c != null && c.Count >= 2)
+                            .ToList();
+                        if (aliasCurves.Count > 0 &&
+                            aliasCurves.All(c => CurveSignature(c) == CurveSignature(aliasCurves[0]))) {
+                            chosen = aliasCurves[0];
+                        }
+                    }
+                    if (chosen != null) {
+                        config.Curves[stableId] = chosen;
+                        changed = true;
+                    }
+                }
+                if (config.Curves.ContainsKey(stableId)) {
+                    foreach (var key in config.Curves.Keys.Where(k => k.StartsWith(prefix) && k != stableId).ToList()) {
+                        config.Curves.Remove(key);
+                        changed = true;
+                    }
+                }
+            }
+
+            return changed;
+        }
+
+        private static string CurveSignature(Dictionary<int, int> curve)
+        {
+            return string.Join(";", curve.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value}"));
         }
 
         /// <summary>同步扫描（仅 UI 线程少量场景使用，例如重命名后立即刷新）</summary>
