@@ -985,6 +985,11 @@ namespace SimpleBrightness
 
             private bool IsDarkMode => _isDarkModeFunc();
 
+            // 去掉右键菜单四周的 1px 描边
+            protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+            {
+            }
+
             protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
             {
                 var item = e.Item;
