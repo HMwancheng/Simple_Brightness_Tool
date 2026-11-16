@@ -13,6 +13,8 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- 软件名称 -->
     <AssemblyName>HM's Simple Brightness Tool</AssemblyName>
+    <!-- 版本号：CI 发版时会自动递增 Patch -->
+    <Version>4.3.2</Version>
     <!-- 作者 -->
     <Company>HMwancheng</Company>
     <Authors>HMwancheng</Authors>
@@ -29,5 +31,7 @@
     <EmbeddedResource Include="app.ico\Icon_Tray_Hybrid.ico" />
     <EmbeddedResource Include="app.ico\Icon_Tray_Minimalist.ico" />
     <EmbeddedResource Include="app.ico\Icon_Tray_Transparent.ico" />
+    <!-- 关于窗口展示的更新日志 -->
+    <EmbeddedResource Include="BuildRelease.md" LogicalName="BuildRelease.md" />
   </ItemGroup>
 </Project>

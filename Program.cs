@@ -1,6 +1,8 @@
 using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Management;
@@ -82,6 +84,15 @@ namespace SimpleBrightness
             RegisterSystemEvents();
 
             contextMenu = new ContextMenuStrip();
+            contextMenu.Font = new Font("Segoe UI", 10f);
+            contextMenu.Padding = new Padding(0, 4, 0, 4);
+            // Win11 圆角菜单
+            contextMenu.HandleCreated += (s, e) => {
+                try {
+                    int corner = 2;
+                    NativeMethods.DwmSetWindowAttribute(contextMenu.Handle, 33, ref corner, sizeof(int));
+                } catch { }
+            };
             
             // Apply dark mode styling to context menu
             ApplyContextMenuDarkMode(contextMenu);
@@ -103,6 +114,10 @@ namespace SimpleBrightness
             
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
+            contextMenu.Items.Add("关于...", null, (s, e) => {
+                using var about = new AboutForm();
+                about.ShowDialog();
+            });
             
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
@@ -866,6 +881,10 @@ namespace SimpleBrightness
                 {
                     trayIcon.Icon = IconDrawer.LoadTrayIcon(config.TrayIconStyle);
                 }
+                if (form.MonitorFilterChanged)
+                {
+                    ReloadMonitorsSafe();
+                }
             };
             form.Show();
         }
@@ -925,23 +944,11 @@ namespace SimpleBrightness
 
         private void ApplyMenuItemStyle(ToolStripItem item, bool isDarkMode)
         {
+            item.Padding = new Padding(2, 3, 2, 3);
             if (item is ToolStripMenuItem menuItem)
             {
                 menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
                 menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
-
-                // Handle hover/selection colors
-                menuItem.MouseEnter += (s, e) =>
-                {
-                    menuItem.BackColor = isDarkMode ? Color.FromArgb(60, 60, 60) : SystemColors.Highlight;
-                    menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.HighlightText;
-                };
-
-                menuItem.MouseLeave += (s, e) =>
-                {
-                    menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
-                    menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
-                };
             }
             else if (item is ToolStripSeparator separator)
             {
@@ -960,6 +967,33 @@ namespace SimpleBrightness
             }
 
             private bool IsDarkMode => _isDarkModeFunc();
+
+            protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+            {
+                var item = e.Item;
+                if (!item.Selected || !item.Enabled) return;
+
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                Color fill = IsDarkMode ? Color.FromArgb(62, 62, 62) : Color.FromArgb(232, 232, 232);
+                var rect = new Rectangle(3, 1, Math.Max(0, item.Width - 6), Math.Max(0, item.Height - 2));
+                using (var path = RoundedRect(rect, 4))
+                using (var brush = new SolidBrush(fill))
+                {
+                    e.Graphics.FillPath(brush, path);
+                }
+            }
+
+            private static GraphicsPath RoundedRect(Rectangle rect, int radius)
+            {
+                var path = new GraphicsPath();
+                int d = radius * 2;
+                path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+                path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+                path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                return path;
+            }
 
             protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
             {
@@ -1182,6 +1216,11 @@ namespace SimpleBrightness
                             string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
                             string uniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
                             string name = config.CustomNames.TryGetValue(uniqueId, out var customName) ? customName : originalName;
+
+                            // 过滤不支持亮度控制的 DDC 设备（Lenovo DisplayHDR 等虚拟/覆盖层）
+                            if (!config.ShowUnsupportedMonitors && !IsBrightnessSupportedDevice(originalName, pMs[i].hPhysicalMonitor))
+                                continue;
+
                             detected.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
                         }
                     }
@@ -1331,6 +1370,17 @@ namespace SimpleBrightness
             }
 
             return changed;
+        }
+
+        /// <summary>判断 DDC 显示器是否真的支持亮度控制（用于过滤 DisplayHDR 等虚拟屏）</summary>
+        private static bool IsBrightnessSupportedDevice(string name, IntPtr handle)
+        {
+            if (!string.IsNullOrEmpty(name) &&
+                name.IndexOf("DisplayHDR", StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
+
+            // 只读探测 VCP 0x10，不写硬件
+            return BrightnessController.GetVCPBrightness(handle) >= 0;
         }
 
         private static string CurveSignature(Dictionary<int, int> curve)
@@ -1550,6 +1600,7 @@ namespace SimpleBrightness
         public string HotkeyIncrease { get; set; } = "Ctrl+F5";  // Default hotkey for brightness increase
         public string HotkeyDecrease { get; set; } = "Ctrl+F6";  // Default hotkey for brightness decrease
         public string TrayIconStyle { get; set; } = "Hybrid";  // Hybrid, Minimalist, Transparent
+        public bool ShowUnsupportedMonitors { get; set; } = false; // 是否显示不支持亮度控制（如 DisplayHDR 虚拟屏）的 DDC 设备
         public List<string> HiddenMonitors { get; set; } = new List<string>(); 
         public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); 
         public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 

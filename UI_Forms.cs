@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -574,7 +576,7 @@ namespace SimpleBrightness
             FlatAppearance.BorderSize = 0;
             BackColor = ThemeManager.Accent;
             ForeColor = Color.White;
-            Font = new Font("Segoe UI", 9f);
+            Font = new Font("Segoe UI Variable Text", 10f);
             Cursor = Cursors.Hand;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
                      ControlStyles.OptimizedDoubleBuffer, true);
@@ -591,7 +593,7 @@ namespace SimpleBrightness
             
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             using (var brush = new SolidBrush(backColor))
-            using (var path = GetRoundedRect(rect, Math.Max(2, (int)Math.Round(4 * DeviceDpi / 96f))))
+            using (var path = GetRoundedRect(rect, Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f))))
             {
                 g.FillPath(brush, path);
             }
@@ -1061,11 +1063,88 @@ namespace SimpleBrightness
         }
     }
 
+    // ================== AboutForm ==================
+    public class AboutForm : DpiForm
+    {
+        public AboutForm()
+        {
+            string version = Application.ProductVersion;
+            this.Text = $"关于 HM's Simple Brightness Tool v{version}";
+            this.Size = new Size(640, 580);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.BackColor = ThemeManager.Background;
+            this.ForeColor = ThemeManager.Text;
+
+            this.HandleCreated += (s, e) => {
+                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
+            };
+
+            Label title = new Label {
+                Text = "HM's Simple Brightness Tool",
+                Location = new Point(24, 20),
+                Font = new Font("Segoe UI Variable Display", 16, FontStyle.Bold),
+                ForeColor = ThemeManager.Text,
+                AutoSize = true
+            };
+            Label ver = new Label {
+                Text = $"版本 v{version}",
+                Location = new Point(24, 56),
+                Font = new Font("Segoe UI Variable Text", 10),
+                ForeColor = ThemeManager.TextSecondary,
+                AutoSize = true
+            };
+            Label lblNotes = new Label {
+                Text = "更新内容",
+                Location = new Point(24, 88),
+                Font = new Font("Segoe UI Variable Text", 10, FontStyle.Bold),
+                ForeColor = ThemeManager.Text,
+                AutoSize = true
+            };
+            TextBox notes = new TextBox {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                WordWrap = true,
+                Location = new Point(24, 112),
+                Size = new Size(576, 400),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = new Font("Segoe UI Variable Text", 9.5f),
+                Text = LoadReleaseNotes()
+            };
+
+            this.Controls.AddRange(new Control[] { title, ver, lblNotes, notes });
+        }
+
+        private static string LoadReleaseNotes()
+        {
+            try
+            {
+                using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BuildRelease.md"))
+                {
+                    if (stream == null) return "未找到更新日志。";
+                    using (var reader = new StreamReader(stream))
+                        return reader.ReadToEnd();
+                }
+            }
+            catch
+            {
+                return "更新日志读取失败。";
+            }
+        }
+    }
+
     // ================== SettingsForm (with Scroll Support and Theme Selection) ==================
     public class SettingsForm : DpiForm {
         public bool HotkeysChanged { get; private set; } = false;
         public string NewHotkeyIncrease { get; private set; } = "";
         public string NewHotkeyDecrease { get; private set; } = "";
+        public bool MonitorFilterChanged { get; private set; } = false;
         public bool TrayIconChanged { get; private set; } = false;
         public string NewTrayIconStyle { get; private set; } = "";
         
@@ -1104,7 +1183,7 @@ namespace SimpleBrightness
             Label lblTitle = new Label { 
                 Text = "设置", 
                 AutoSize = true, 
-                Font = new Font("Segoe UI Variable Display", 18, FontStyle.Regular),
+                Font = new Font("Segoe UI Variable Display", 20, FontStyle.Bold),
                 ForeColor = ThemeManager.Text,
                 Margin = new Padding(0, 0, 0, 20)
             };
@@ -1138,6 +1217,7 @@ namespace SimpleBrightness
                 ThemeMode.System => 2,
                 _ => 2
             };
+            StyleCombo(cmbTheme);
             panel.Controls.Add(cmbTheme);
             
             CheckBox chkAuto = new CheckBox { 
@@ -1166,6 +1246,7 @@ namespace SimpleBrightness
                 Margin = new Padding(0, 5, 0, 20),
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI Variable Text", 10.5f),
                 BorderStyle = BorderStyle.FixedSingle
             }; 
             panel.Controls.Add(numStep);
@@ -1186,6 +1267,7 @@ namespace SimpleBrightness
                 Margin = new Padding(0, 5, 0, 20),
                 BackColor = ThemeManager.Surface,
                 ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI Variable Text", 10.5f),
                 BorderStyle = BorderStyle.FixedSingle
             }; 
             panel.Controls.Add(numDelay);
@@ -1209,6 +1291,7 @@ namespace SimpleBrightness
             cmbPower.Items.Add("待机 (0x04)");
             cmbPower.Items.Add("关机 (0x05)");
             cmbPower.SelectedIndex = config.PowerOffMode == 5 ? 1 : 0;
+            StyleCombo(cmbPower);
             panel.Controls.Add(cmbPower);
 
             // Tray Icon Style Selection
@@ -1237,7 +1320,25 @@ namespace SimpleBrightness
                 "Transparent" => 2,
                 _ => 0
             };
+            StyleCombo(cmbTrayIcon);
             panel.Controls.Add(cmbTrayIcon);
+
+            CheckBox chkUnsupported = new CheckBox {
+                Text = "显示不支持亮度控制的显示器（如 DisplayHDR 虚拟屏）",
+                AutoSize = true,
+                Checked = config.ShowUnsupportedMonitors,
+                Font = new Font("Segoe UI Variable Text", 10),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 16)
+            };
+            panel.Controls.Add(chkUnsupported);
+
+            // 分组分割线
+            panel.Controls.Add(new Panel {
+                Size = new Size(320, 1),
+                BackColor = ThemeManager.Border,
+                Margin = new Padding(0, 4, 0, 14)
+            });
 
             // Hotkey Configuration
             Label lblHotkeyTitle = new Label { 
@@ -1317,6 +1418,10 @@ namespace SimpleBrightness
                 config.ScrollStep = (int)numStep.Value; 
                 config.DebounceTime = (int)numDelay.Value; 
                 config.PowerOffMode = cmbPower.SelectedIndex == 1 ? 5 : 4;
+                if (config.ShowUnsupportedMonitors != chkUnsupported.Checked) {
+                    config.ShowUnsupportedMonitors = chkUnsupported.Checked;
+                    this.MonitorFilterChanged = true;
+                }
                 // Save hotkeys
                 string newIncrease = capturedIncrease;
                 string newDecrease = capturedDecrease;
@@ -1358,8 +1463,71 @@ namespace SimpleBrightness
             this.Controls.Add(btnOk);
             btnOk.BringToFront();
         } 
+        private static void StyleCombo(ComboBox combo)
+        {
+            combo.FlatStyle = FlatStyle.Flat;
+            combo.Font = new Font("Segoe UI Variable Text", 10);
+            combo.DrawMode = DrawMode.OwnerDrawFixed;
+            combo.ItemHeight = 24;
+            combo.BackColor = ThemeManager.Surface;
+            combo.ForeColor = ThemeManager.Text;
+            combo.DrawItem += ComboDrawItem;
+        }
+
+        private static void ComboDrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (sender is not ComboBox combo || e.Index < 0) return;
+
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            Color back = selected ? ThemeManager.Accent : ThemeManager.Surface;
+            Color fore = selected ? Color.White : ThemeManager.Text;
+
+            using (var brush = new SolidBrush(back))
+                e.Graphics.FillRectangle(brush, e.Bounds);
+
+            string text = combo.Items[e.Index]?.ToString() ?? "";
+            TextRenderer.DrawText(e.Graphics, text, combo.Font,
+                new Rectangle(e.Bounds.X + 8, e.Bounds.Y, Math.Max(0, e.Bounds.Width - 8), e.Bounds.Height),
+                fore, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        }
+
         private bool IsAutoStart() { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false)) return key?.GetValue("SimpleBrightness") != null; } 
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } 
+    }
+
+    /// <summary>圆角卡片容器：绘制主题 Surface 背景，用于突出显示器控件范围</summary>
+    public class RoundedCardPanel : FlowLayoutPanel
+    {
+        public RoundedCardPanel()
+        {
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw, true);
+            DoubleBuffered = true;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            using (var backBrush = new SolidBrush(ThemeManager.Background))
+                g.FillRectangle(backBrush, ClientRectangle);
+
+            int radius = Math.Min(
+                Math.Max(2, (int)Math.Round(8 * DeviceDpi / 96f)),
+                Math.Min(Width, Height) / 2);
+            if (radius <= 0) return;
+
+            int d = radius * 2;
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            using (var path = new GraphicsPath())
+            {
+                path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+                path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
+                path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+                path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+                path.CloseFigure();
+                using (var brush = new SolidBrush(ThemeManager.Surface))
+                    g.FillPath(brush, path);
+            }
+        }
     }
 
     // ================== BrightnessForm (Control Center) ==================
@@ -1371,6 +1539,7 @@ namespace SimpleBrightness
         private Dictionary<string, Win11TrackBar> _sliders = new Dictionary<string, Win11TrackBar>(); 
         private Dictionary<string, Label> _valLabels = new Dictionary<string, Label>(); 
         private FlowLayoutPanel _mainPanel;
+        private Panel _scrollHost;
         
         private bool IsMonitorHidden(MonitorInfo m, int index) {
             if (_config.HiddenMonitors.Contains(m.UniqueId)) return true;
@@ -1413,8 +1582,7 @@ namespace SimpleBrightness
             this.BackColor = ThemeManager.Background; 
             this.StartPosition = FormStartPosition.Manual; 
             this.TopMost = true; 
-            this.AutoSize = true; 
-            this.AutoSizeMode = AutoSizeMode.GrowAndShrink; 
+            this.AutoSize = false;
             this.Padding = new Padding(0);
             
             this.HandleCreated += (s, e) => {
@@ -1430,29 +1598,37 @@ namespace SimpleBrightness
                 else this.Activate(); 
             };
             
+            _scrollHost = new Panel {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = ThemeManager.Background
+            };
+            this.Controls.Add(_scrollHost);
+
             _mainPanel = new FlowLayoutPanel { 
                 FlowDirection = FlowDirection.TopDown, 
                 WrapContents = false, 
                 AutoSize = true, 
                 AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                 Padding = new Padding(16, 12, 16, 12), 
-                BackColor = Color.Transparent, 
-                MaximumSize = new Size(520, 2000) 
+                BackColor = ThemeManager.Background, 
+                MaximumSize = new Size(520, 2000),
+                Location = new Point(0, 0)
             }; 
-            this.Controls.Add(_mainPanel);
+            _scrollHost.Controls.Add(_mainPanel);
             
             // Header with title
-            Panel header = new Panel { Size = new Size(460, 50), Margin = new Padding(0, 0, 0, 10) }; 
+            Panel header = new Panel { Size = new Size(460, 58), Margin = new Padding(0, 0, 0, 0) }; 
             Label title = new Label { 
                 Text = "控制中心", 
-                Location = new Point(0, 10), 
+                Location = new Point(0, 6), 
                 ForeColor = ThemeManager.Text, 
-                Font = new Font("Segoe UI Variable Display", 16, FontStyle.Regular), 
+                Font = new Font("Segoe UI Variable Display", 20, FontStyle.Bold), 
                 AutoSize = true 
             }; 
             Button btnMenu = new Button { 
                 Text = "☰", 
-                Location = new Point(420, 5), 
+                Location = new Point(420, 12), 
                 Size = new Size(40, 40), 
                 FlatStyle = FlatStyle.Flat, 
                 ForeColor = ThemeManager.Text, 
@@ -1465,6 +1641,13 @@ namespace SimpleBrightness
             header.Controls.Add(title); 
             header.Controls.Add(btnMenu); 
             _mainPanel.Controls.Add(header);
+
+            // 标题与显示器列表之间的分割线
+            _mainPanel.Controls.Add(new Panel {
+                Size = new Size(460, 1),
+                BackColor = ThemeManager.Border,
+                Margin = new Padding(0, 0, 0, 12)
+            });
             
             var visibleMonitors = new List<MonitorInfo>();
             int idx = 0;
@@ -1475,18 +1658,18 @@ namespace SimpleBrightness
             if (visibleMonitors.Count == 0) visibleMonitors = _monitors; 
             
             foreach (var m in visibleMonitors) {
-                FlowLayoutPanel card = new FlowLayoutPanel { 
+                RoundedCardPanel card = new RoundedCardPanel { 
                     FlowDirection = FlowDirection.TopDown, 
                     WrapContents = false, 
                     AutoSize = true, 
                     AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                     Width = 460, 
-                    Padding = new Padding(0, 8, 0, 12), 
+                    Padding = new Padding(12, 10, 12, 10), 
                     Margin = new Padding(0, 0, 0, 12),
-                    BackColor = Color.Transparent
+                    BackColor = ThemeManager.Surface
                 };
                 
-                Panel row1 = new Panel { Size = new Size(450, 32), Margin = new Padding(4, 0, 4, 8) }; 
+                Panel row1 = new Panel { Size = new Size(436, 32), Margin = new Padding(0, 0, 0, 8), BackColor = ThemeManager.Surface }; 
                 Label lblName = new Label { 
                     Text = m.Name, 
                     Location = new Point(0, 4), 
@@ -1494,12 +1677,12 @@ namespace SimpleBrightness
                     AutoSize = true, 
                     Font = new Font("Segoe UI Variable Text", 11), 
                     Cursor = Cursors.Hand, 
-                    MaximumSize = new Size(360, 30) 
+                    MaximumSize = new Size(340, 30) 
                 }; 
                 SetupNameMenu(lblName, m); 
                 Label lblVal = new Label { 
                     Text = $"{m.LastBrightness}%", 
-                    Location = new Point(390, 4), 
+                    Location = new Point(376, 4), 
                     ForeColor = ThemeManager.Accent, 
                     AutoSize = true, 
                     Font = new Font("Segoe UI Variable Text", 12, FontStyle.Bold) 
@@ -1511,11 +1694,11 @@ namespace SimpleBrightness
                 
                 // Use custom Win11 style TrackBar (6px with double circle thumb, larger thumb)
                 Win11TrackBar slider = new Win11TrackBar { 
-                    Size = new Size(450, 36), // Increased height for larger thumb
+                    Size = new Size(436, 36), // Increased height for larger thumb
                     Maximum = 100, 
                     Minimum = 0, 
                     Value = m.LastBrightness, 
-                    Margin = new Padding(4, 4, 4, 8)
+                    Margin = new Padding(0, 2, 0, 6)
                 }; 
                 _sliders[m.UniqueId] = slider; 
                 
@@ -1538,20 +1721,20 @@ namespace SimpleBrightness
                         AutoSize = true, 
                         AutoSizeMode = AutoSizeMode.GrowAndShrink, 
                         FlowDirection = FlowDirection.LeftToRight, 
-                        Margin = new Padding(4, 8, 0, 0),
-                        BackColor = Color.Transparent
+                        Margin = new Padding(0, 4, 0, 0),
+                        BackColor = ThemeManager.Surface
                     }; 
                     
                     Win11Button btnCurve = new Win11Button { 
                         Text = "编辑曲线", 
-                        Size = new Size(110, 36)
+                        Size = new Size(110, 34)
                     }; 
                     btnCurve.Click += (s, e) => { var editor = new CurveEditorForm(m, _config, _context); editor.Show(this); }; 
                     btnRow.Controls.Add(btnCurve); 
                     
                     Win11Button btnPower = new Win11Button { 
                         Text = "⏻ 电源", 
-                        Size = new Size(90, 36),
+                        Size = new Size(90, 34),
                         BackColor = Color.FromArgb(50, 50, 50)
                     }; 
                     btnPower.MouseDown += (s, e) => { 
@@ -1563,14 +1746,6 @@ namespace SimpleBrightness
                     card.Controls.Add(btnRow); 
                 }
                 
-                if (m != visibleMonitors.Last()) { 
-                    Panel div = new Panel { 
-                        Size = new Size(450, 1), 
-                        BackColor = ThemeManager.Border, 
-                        Margin = new Padding(4, 16, 4, 0) 
-                    }; 
-                    card.Controls.Add(div); 
-                } 
                 _mainPanel.Controls.Add(card);
             }
         }
@@ -1579,6 +1754,14 @@ namespace SimpleBrightness
             base.OnLoad(e); 
             var screen = Screen.FromPoint(Cursor.Position); 
             int margin = DpiUtil.ScalePx(screen, 10);
+
+            // 高度按内容自适应，但不超过工作区；超出时出现滚动条（4-5 个显示器内通常无需滚动）
+            var pref = _mainPanel.PreferredSize;
+            int maxHeight = screen.WorkingArea.Height - margin * 2;
+            bool needScroll = pref.Height > maxHeight;
+            int scrollbar = SystemInformation.VerticalScrollBarWidth + 2;
+            this.ClientSize = new Size(pref.Width + (needScroll ? scrollbar : 0), Math.Min(pref.Height, maxHeight));
+
             int x = screen.WorkingArea.Right - this.Width - margin; 
             int y = screen.WorkingArea.Bottom - this.Height - margin; 
             if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + DpiUtil.ScalePx(screen, 50); 

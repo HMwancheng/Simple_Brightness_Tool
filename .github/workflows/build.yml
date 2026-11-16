@@ -34,15 +34,33 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
-    # 4. 恢复依赖
+    # 4. 发版时自动递增 Patch 版本号并提交回仓库
+    - name: Bump Version
+      id: version
+      if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
+      shell: pwsh
+      run: |
+        [xml]$proj = Get-Content -Raw SimpleBrightness.csproj
+        $current = [version]$proj.Project.PropertyGroup.Version
+        $newVersion = "{0}.{1}.{2}" -f $current.Major, $current.Minor, ($current.Build + 1)
+        $proj.Project.PropertyGroup.Version = $newVersion
+        $proj.Save((Resolve-Path SimpleBrightness.csproj))
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add SimpleBrightness.csproj
+        git commit -m "chore: bump version to v$newVersion [skip ci]"
+        git push origin HEAD:${{ github.ref_name }}
+        "version=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+    # 5. 恢复依赖
     - name: Restore dependencies
       run: dotnet restore
 
-    # 5. 编译生成 EXE (始终执行)
+    # 6. 编译生成 EXE (始终执行)
     - name: Publish (Build EXE)
       run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o build_output
 
-    # 6. 上传 Artifact (始终执行，作为普通 Action 产物)
+    # 7. 上传 Artifact (始终执行，作为普通 Action 产物)
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -50,15 +68,14 @@ jobs:
         path: build_output/*.exe
         retention-days: 30
 
-    # 7. 生成版本号 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
-    # 使用时间戳作为版本号，例如 v2025.01.01.1230
+    # 8. 生成版本标签 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
     - name: Generate Tag
       id: tag
       if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
       shell: bash
-      run: echo "tag_name=v$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
+      run: echo "tag_name=v${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
 
-    # 8. 创建 Release 并上传文件 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
+    # 9. 创建 Release 并上传文件 (仅当 BuildRelease.md 变化且是 GMN 分支时执行)
     - name: Create Release
       uses: softprops/action-gh-release@v1
       if: steps.check_file.outputs.release == 'true' && github.ref == 'refs/heads/GMN'
