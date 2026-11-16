@@ -29,7 +29,5 @@
     <EmbeddedResource Include="app.ico\Icon_Tray_Hybrid.ico" />
     <EmbeddedResource Include="app.ico\Icon_Tray_Minimalist.ico" />
     <EmbeddedResource Include="app.ico\Icon_Tray_Transparent.ico" />
-    <!-- 关于窗口展示的更新日志 -->
-    <EmbeddedResource Include="BuildRelease.md" LogicalName="BuildRelease.md" />
   </ItemGroup>
 </Project>

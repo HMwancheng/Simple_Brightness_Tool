@@ -84,7 +84,7 @@ namespace SimpleBrightness
             RegisterSystemEvents();
 
             contextMenu = new ContextMenuStrip();
-            contextMenu.Font = new Font("Segoe UI", 10f);
+            contextMenu.Font = new Font("Segoe UI", 9.5f);
             contextMenu.Padding = new Padding(0, 4, 0, 4);
             // Win11 圆角菜单
             contextMenu.HandleCreated += (s, e) => {
@@ -114,10 +114,7 @@ namespace SimpleBrightness
             
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
-            contextMenu.Items.Add("关于...", null, (s, e) => {
-                using var about = new AboutForm();
-                about.ShowDialog();
-            });
+            contextMenu.Items.Add(new ToolStripMenuItem($"版本 v{Application.ProductVersion}") { Enabled = false });
             
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
@@ -953,7 +950,9 @@ namespace SimpleBrightness
             if (item is ToolStripMenuItem menuItem)
             {
                 menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
-                menuItem.ForeColor = isDarkMode ? Color.White : SystemColors.ControlText;
+                menuItem.ForeColor = !menuItem.Enabled
+                    ? ThemeManager.TextSecondary
+                    : (isDarkMode ? Color.White : SystemColors.ControlText);
             }
             else if (item is ToolStripSeparator separator)
             {
@@ -981,7 +980,7 @@ namespace SimpleBrightness
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 Color fill = IsDarkMode ? Color.FromArgb(62, 62, 62) : Color.FromArgb(232, 232, 232);
                 var rect = new Rectangle(3, 1, Math.Max(0, item.Width - 6), Math.Max(0, item.Height - 2));
-                using (var path = RoundedRect(rect, 4))
+                using (var path = RoundedRect(rect, 3))
                 using (var brush = new SolidBrush(fill))
                 {
                     e.Graphics.FillPath(brush, path);
@@ -1034,10 +1033,12 @@ namespace SimpleBrightness
             protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
             {
                 Color separatorColor = IsDarkMode ? Color.FromArgb(60, 60, 60) : Color.FromArgb(200, 200, 200);
+                int inset = 12;
+                int y = e.Item.Height / 2;
                 using (Pen pen = new Pen(separatorColor))
                 {
-                    e.Graphics.DrawLine(pen, e.Item.ContentRectangle.Left, e.Item.ContentRectangle.Height / 2,
-                        e.Item.ContentRectangle.Right, e.Item.ContentRectangle.Height / 2);
+                    // 两端留白，不顶满菜单宽度
+                    e.Graphics.DrawLine(pen, inset, y, Math.Max(inset, e.Item.Width - inset), y);
                 }
             }
 

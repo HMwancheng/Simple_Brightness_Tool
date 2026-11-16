@@ -5,7 +5,6 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -584,8 +583,11 @@ namespace SimpleBrightness
             Font = new Font("Segoe UI Variable Text", 10f);
             Cursor = Cursors.Hand;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
-                     ControlStyles.OptimizedDoubleBuffer, true);
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
         }
+
+        // 完全自己绘制背景，避免系统按钮的矩形底/焦点框残留
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -1080,82 +1082,6 @@ namespace SimpleBrightness
             this.Controls.Add(title); 
             this.Controls.Add(info); 
             this.Controls.Add(btnOk);
-        }
-    }
-
-    // ================== AboutForm ==================
-    public class AboutForm : DpiForm
-    {
-        public AboutForm()
-        {
-            string version = Application.ProductVersion;
-            this.Text = $"关于 HM's Simple Brightness Tool v{version}";
-            this.Size = new Size(640, 580);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.BackColor = ThemeManager.Background;
-            this.ForeColor = ThemeManager.Text;
-
-            this.HandleCreated += (s, e) => {
-                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
-            };
-
-            Label title = new Label {
-                Text = "HM's Simple Brightness Tool",
-                Location = new Point(24, 20),
-                Font = new Font("Segoe UI Variable Display", 16, FontStyle.Bold),
-                ForeColor = ThemeManager.Text,
-                AutoSize = true
-            };
-            Label ver = new Label {
-                Text = $"版本 v{version}",
-                Location = new Point(24, 56),
-                Font = new Font("Segoe UI Variable Text", 10),
-                ForeColor = ThemeManager.TextSecondary,
-                AutoSize = true
-            };
-            Label lblNotes = new Label {
-                Text = "更新内容",
-                Location = new Point(24, 88),
-                Font = new Font("Segoe UI Variable Text", 10, FontStyle.Bold),
-                ForeColor = ThemeManager.Text,
-                AutoSize = true
-            };
-            TextBox notes = new TextBox {
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                WordWrap = true,
-                Location = new Point(24, 112),
-                Size = new Size(576, 400),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
-                BackColor = ThemeManager.Surface,
-                ForeColor = ThemeManager.Text,
-                BorderStyle = BorderStyle.FixedSingle,
-                Font = new Font("Segoe UI Variable Text", 9.5f),
-                Text = LoadReleaseNotes()
-            };
-
-            this.Controls.AddRange(new Control[] { title, ver, lblNotes, notes });
-        }
-
-        private static string LoadReleaseNotes()
-        {
-            try
-            {
-                using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("BuildRelease.md"))
-                {
-                    if (stream == null) return "未找到更新日志。";
-                    using (var reader = new StreamReader(stream))
-                        return reader.ReadToEnd();
-                }
-            }
-            catch
-            {
-                return "更新日志读取失败。";
-            }
         }
     }
 
@@ -1696,6 +1622,7 @@ namespace SimpleBrightness
             _titleBar.Controls.Add(_btnMenu);
             _titleBar.Controls.Add(_btnClose);
             _titleBar.MouseDown += TitleBar_MouseDown;
+            _titleBar.SizeChanged += (s, e) => LayoutTitleBar();
 
             _scrollHost = new Panel {
                 Dock = DockStyle.Fill,
@@ -1828,10 +1755,7 @@ namespace SimpleBrightness
             int margin = DpiUtil.ScalePx(screen, 10);
 
             // 高度按内容自适应，但不超过工作区；超出时出现滚动条（4-5 个显示器内通常无需滚动）
-            // 标题栏高度跟随按钮实际高度，避免按钮下半部分被裁掉
-            int barPad = DpiUtil.ScalePx(screen, 6);
-            _titleBar.Height = Math.Max(_btnClose.Height + barPad * 2, DpiUtil.ScalePx(screen, 40));
-
+            UpdateTitleBarHeight();
             var pref = _mainPanel.PreferredSize;
             int totalPref = _titleBar.Height + pref.Height;
             int maxHeight = screen.WorkingArea.Height - margin * 2;
@@ -1872,7 +1796,7 @@ namespace SimpleBrightness
         {
             var button = new Button {
                 Text = text,
-                Size = new Size(32, 28),
+                Size = new Size(36, 30),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = ThemeManager.Text,
                 BackColor = ThemeManager.Background,
@@ -1886,21 +1810,35 @@ namespace SimpleBrightness
             return button;
         }
 
+        private void UpdateTitleBarHeight()
+        {
+            if (_titleBar == null || _btnMenu == null || _btnClose == null) return;
+            var screen = Screen.FromControl(this);
+            int radius = DpiUtil.ScalePx(screen, 8);
+            int pad = Math.Max(DpiUtil.ScalePx(screen, 6), radius); // 至少让按钮避开圆角区域
+            int height = Math.Max(_btnMenu.Height, _btnClose.Height) + pad * 2;
+            if (_titleBar.Height != height) _titleBar.Height = height;
+        }
+
         private void LayoutTitleBar()
         {
             if (_titleBar == null || _btnMenu == null || _btnClose == null) return;
+
+            UpdateTitleBarHeight();
+
             if (_titleBar.Width <= 0) return;
 
-            int margin = 8;
+            var screen = Screen.FromControl(this);
+            int radius = DpiUtil.ScalePx(screen, 8);
+            int rightMargin = radius + DpiUtil.ScalePx(screen, 4);
             int gap = 2;
             int y = (_titleBar.Height - _btnClose.Height) / 2;
-            _btnClose.Location = new Point(_titleBar.Width - _btnClose.Width - margin, y);
+            _btnClose.Location = new Point(_titleBar.Width - _btnClose.Width - rightMargin, y);
             _btnMenu.Location = new Point(_btnClose.Left - _btnMenu.Width - gap, y);
 
             if (_titleLabel != null)
             {
-                int left = DpiUtil.ScalePx(Screen.FromControl(this), 12);
-                _titleLabel.Location = new Point(left, (_titleBar.Height - _titleLabel.Height) / 2);
+                _titleLabel.Location = new Point(rightMargin, (_titleBar.Height - _titleLabel.Height) / 2);
             }
         }
 
