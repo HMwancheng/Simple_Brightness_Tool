@@ -1657,6 +1657,14 @@ namespace SimpleBrightness
                 if (parts.Length >= 4) {
                     string nameHash = parts[1];
                     string idxStr = parts[parts.Length - 1];
+
+                    // 与主逻辑一致：优先采用旧别名中“唯一不同”的那条（最近一次编辑）
+                    var editedCurve = _config.FindOutlierCurve(nameHash);
+                    if (editedCurve != null) {
+                        _config.Curves[_monitor.UniqueId] = editedCurve;
+                        return editedCurve;
+                    }
+
                     string oldId = $"DDC_{nameHash}_IDX_{idxStr}";
                     if (_config.Curves.TryGetValue(oldId, out var oldCurve) && oldCurve.Count >= 2) {
                         _config.Curves[_monitor.UniqueId] = oldCurve;
@@ -1998,14 +2006,19 @@ namespace SimpleBrightness
                 }
             }
 
-            _config.Curves[targetId] = new Dictionary<int, int>(_points);
+            var newCurve = new Dictionary<int, int>(_points);
+            _config.Curves[targetId] = newCurve;
 
-            // 清理旧版 ID 格式（DDC_hash_IDX_i），避免迁移逻辑把旧曲线搬回来。
-            // 注意：不要删除同 nameHash 的其他 _H 条目，同型号显示器可能共用名称哈希。
-            if (targetId.StartsWith("DDC_") && targetId.Contains("_H")) {
+            // 同步到同一显示器的所有历史 ID（旧版本用物理句柄生成 ID，唤醒后会留下大量别名）。
+            // 否则下次迁移可能从某个旧别名读到过期曲线，表现为“保存后过一会儿又变回去”。
+            if (targetId.StartsWith("DDC_")) {
                 string[] parts = targetId.Split('_');
                 if (parts.Length >= 4) {
-                    _config.Curves.Remove($"DDC_{parts[1]}_IDX_{parts[parts.Length - 1]}");
+                    string aliasPrefix = $"DDC_{parts[1]}_";
+                    foreach (var key in _config.Curves.Keys.ToList()) {
+                        if (key == targetId || !key.StartsWith(aliasPrefix)) continue;
+                        _config.Curves[key] = new Dictionary<int, int>(_points);
+                    }
                 }
             }
 

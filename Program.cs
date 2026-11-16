@@ -378,6 +378,15 @@ namespace SimpleBrightness
                 if (parts.Length >= 4)
                 {
                     string nameHash = parts[1];
+
+                    // 旧版按物理句柄生成 ID，唤醒一次就多一个别名。若其中恰好只有一条曲线
+                    // 与其它都不同，说明它是最近一次编辑（旧版保存只写了一个 ID），优先采用它。
+                    var editedCurve = config.FindOutlierCurve(nameHash);
+                    if (editedCurve != null)
+                    {
+                        config.Curves[m.UniqueId] = editedCurve;
+                        return editedCurve;
+                    }
                     
                     // 尝试旧版ID格式 (DDC_{hash}_IDX_{i})
                     for (int i = 0; i < 4; i++)
@@ -1195,10 +1204,28 @@ namespace SimpleBrightness
 
                 var parts = m.UniqueId.Split('_');
                 if (parts.Length < 4) continue;
-                string oldId = $"DDC_{parts[1]}_IDX_{parts[parts.Length - 1]}";
+                string nameHash = parts[1];
+
+                // 旧版 ID：DDC_hash_IDX_i
+                string oldId = $"DDC_{nameHash}_IDX_{parts[parts.Length - 1]}";
                 if (config.CustomNames.TryGetValue(oldId, out var oldName)) {
                     config.CustomNames[m.UniqueId] = oldName;
                     m.Name = oldName;
+                    migratedNames = true;
+                    continue;
+                }
+
+                // 旧版句柄 ID（DDC_hash_Hxxx_IDX_i）：新稳定 ID 也需要继承自定义名称
+                string? aliasName = null;
+                foreach (var kv in config.CustomNames) {
+                    if (kv.Key.StartsWith($"DDC_{nameHash}_H")) {
+                        aliasName = kv.Value;
+                        break;
+                    }
+                }
+                if (aliasName != null) {
+                    config.CustomNames[m.UniqueId] = aliasName;
+                    m.Name = aliasName;
                     migratedNames = true;
                 }
             }
@@ -1224,13 +1251,25 @@ namespace SimpleBrightness
             return hash.ToString();
         }
 
-        // 生成更稳定的唯一ID，包含显示器句柄信息以避免同名显示器冲突
+        // 生成稳定的唯一 ID：使用显示输出设备名（\\.\DISPLAY1）而不是物理句柄。
+        // 物理句柄在睡眠唤醒/重新枚举后会变化，旧逻辑会把同一台显示器变成多个 ID，
+        // 导致曲线在历史别名之间来回迁移（表现为“改过的曲线过一会儿又变回去”）。
         private static string GetMonitorUniqueId(string originalName, IntPtr hMonitor, int index) {
-            // 结合名称哈希、显示器句柄和索引，确保唯一性
             string nameHash = GetStableHash(originalName);
-            // 使用显示器句柄的低32位作为额外标识
-            int handleId = hMonitor.ToInt32();
-            return $"DDC_{nameHash}_H{handleId}_IDX_{index}";
+            string deviceHash = GetMonitorDeviceHash(hMonitor);
+            string suffix = string.IsNullOrEmpty(deviceHash) ? hMonitor.ToInt32().ToString() : deviceHash;
+            return $"DDC_{nameHash}_H{suffix}_IDX_{index}";
+        }
+
+        /// <summary>取显示输出设备名的哈希（如 \\.\DISPLAY1），用于构造稳定 ID</summary>
+        private static string GetMonitorDeviceHash(IntPtr hMonitor)
+        {
+            try {
+                var info = new NativeMethods.MONITORINFOEX { cbSize = Marshal.SizeOf<NativeMethods.MONITORINFOEX>() };
+                if (NativeMethods.GetMonitorInfo(hMonitor, ref info) && !string.IsNullOrEmpty(info.szDevice))
+                    return GetStableHash(info.szDevice);
+            } catch { }
+            return "";
         }
     }
 
@@ -1435,6 +1474,38 @@ namespace SimpleBrightness
             }
         }
         public void Save() { SaveChecked(out _); }
+
+        /// <summary>
+        /// 在旧版遗留的大量同显示器别名曲线中，找出“唯一不同”的那条（最近一次编辑）。
+        /// 只有当别名数量较多（≥5）且恰好存在一条唯一曲线时才判定，
+        /// 避免把两台同型号显示器的正常差异误判为编辑。
+        /// </summary>
+        public Dictionary<int, int>? FindOutlierCurve(string nameHash)
+        {
+            string prefix = $"DDC_{nameHash}_";
+            var groups = new Dictionary<string, (Dictionary<int, int> Curve, int Count)>();
+            int total = 0;
+
+            foreach (var kv in Curves) {
+                if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                var curve = kv.Value;
+                if (curve == null || curve.Count == 0) continue;
+                total++;
+                string signature = string.Join(";", curve.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value}"));
+                if (groups.TryGetValue(signature, out var group))
+                    groups[signature] = (group.Curve, group.Count + 1);
+                else
+                    groups[signature] = (curve, 1);
+            }
+
+            if (total < 5 || groups.Count != 2) return null;
+
+            var singles = groups.Values.Where(g => g.Count == 1).ToList();
+            if (singles.Count != 1) return null;
+
+            // 另一组必须是有多条的“多数派”，否则无法判断哪条是编辑
+            return groups.Values.Any(g => g.Count > 1) ? singles[0].Curve : null;
+        }
     }
     public class MonitorInfo { public string Name { get; set; } = "Unknown"; public MonitorType Type { get; set; } public IntPtr Handle { get; set; } public string InstanceId { get; set; } = ""; public string UniqueId { get; set; } = ""; public int LastBrightness { get; set; } = 50; }
     public enum MonitorType { WMI, DDC }
@@ -1552,6 +1623,9 @@ namespace SimpleBrightness
         [DllImport("dxva2.dll")] public static extern bool SetVCPFeature(IntPtr hMonitor, byte bVCPCode, uint dwNewValue); 
         [DllImport("dxva2.dll")] public static extern bool GetVCPFeatureAndVCPFeatureReply(IntPtr hMonitor, byte bVCPCode, IntPtr pvct, ref uint pdwCurrentValue, ref uint pdwMaximumValue); 
         [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse); 
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point p); 
         [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount); 
         [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Auto)] public static extern IntPtr GetParent(IntPtr hWnd); 
@@ -1587,6 +1661,16 @@ namespace SimpleBrightness
         public const int DWMSBT_TABBEDWINDOW = 4;    // Tabbed
         
         [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left; public int top; public int right; public int bottom; } 
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        public struct MONITORINFOEX
+        {
+            public int cbSize;
+            public Rect rcMonitor;
+            public Rect rcWork;
+            public uint dwFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+            public string szDevice = "";
+        }
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] public struct PHYSICAL_MONITOR { public IntPtr hPhysicalMonitor; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szPhysicalMonitorDescription; } 
         [StructLayout(LayoutKind.Sequential)]
         public struct NOTIFYICONIDENTIFIER
