@@ -186,90 +186,6 @@ namespace SimpleBrightness
             int backdrop = 3; // DWMSBT_TRANSIENTWINDOW
             NativeMethods.DwmSetWindowAttribute(form.Handle, 38, ref backdrop, sizeof(int));
         }
-
-        // ================== 经典窗口亚克力模糊（Win10 1803+） ==================
-        private enum AccentState
-        {
-            ACCENT_DISABLED = 0,
-            ACCENT_ENABLE_GRADIENT = 1,
-            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
-            ACCENT_ENABLE_BLURBEHIND = 3,
-            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct AccentPolicy
-        {
-            public AccentState AccentState;
-            public int AccentFlags;
-            public int GradientColor;
-            public int AnimationId;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct WindowCompositionAttributeData
-        {
-            public int Attribute;
-            public IntPtr Data;
-            public int SizeOfData;
-        }
-
-        [DllImport("user32.dll")]
-        private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
-
-        private const int WCA_ACCENT_POLICY = 19;
-
-        /// <summary>启用亚克力模糊；失败时静默回退为普通半透明</summary>
-        public static void ApplyAcrylicBlur(IntPtr hwnd, bool darkMode, byte alpha = 0xCC)
-        {
-            if (hwnd == IntPtr.Zero) return;
-            try
-            {
-                // GradientColor 格式为 AABBGGRR
-                int tint = darkMode ? 0x202020 : 0xF0F0F0;
-                var policy = new AccentPolicy
-                {
-                    AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
-                    AccentFlags = 2,
-                    GradientColor = (alpha << 24) | tint,
-                    AnimationId = 0
-                };
-                SetAccentPolicy(hwnd, policy);
-            }
-            catch { }
-        }
-
-        public static void DisableAcrylicBlur(IntPtr hwnd)
-        {
-            if (hwnd == IntPtr.Zero) return;
-            try
-            {
-                var policy = new AccentPolicy { AccentState = AccentState.ACCENT_DISABLED };
-                SetAccentPolicy(hwnd, policy);
-            }
-            catch { }
-        }
-
-        private static void SetAccentPolicy(IntPtr hwnd, AccentPolicy policy)
-        {
-            int size = Marshal.SizeOf<AccentPolicy>();
-            IntPtr buffer = Marshal.AllocHGlobal(size);
-            try
-            {
-                Marshal.StructureToPtr(policy, buffer, false);
-                var data = new WindowCompositionAttributeData
-                {
-                    Attribute = WCA_ACCENT_POLICY,
-                    SizeOfData = size,
-                    Data = buffer
-                };
-                SetWindowCompositionAttribute(hwnd, ref data);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
-            }
-        }
     }
     
     // ================== DPI 缩放辅助 ==================
@@ -673,7 +589,6 @@ namespace SimpleBrightness
         
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             
@@ -1440,7 +1355,7 @@ namespace SimpleBrightness
             panel.Controls.Add(chkUnsupported);
 
             CheckBox chkTransparent = new CheckBox {
-                Text = "半透明磨砂窗口（关闭则标题栏与主体统一为不透明主题）",
+                Text = "半透明窗口（关闭则标题栏与主体统一为不透明主题）",
                 AutoSize = true,
                 Checked = config.TransparentWindow,
                 Font = new Font("Segoe UI Variable Text", 10),
@@ -1685,6 +1600,7 @@ namespace SimpleBrightness
         private FlowLayoutPanel _mainPanel;
         private Panel _scrollHost;
         private Panel _titleBar;
+        private Label _titleLabel;
         private Button _btnMenu;
         private Button _btnClose;
         private ContextMenuStrip _contextMenu;
@@ -1764,11 +1680,19 @@ namespace SimpleBrightness
             };
             _btnMenu = CreateTitleBarButton("☰");
             _btnClose = CreateTitleBarButton("✕");
+            _titleLabel = new Label {
+                Text = "HM's Simple Brightness Tool",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Font = new Font("Segoe UI Variable Text", 9.5f),
+                BackColor = ThemeManager.Background
+            };
             _btnMenu.Click += (s, e) => {
                 if (_contextMenu != null)
                     _contextMenu.Show(_btnMenu, new Point(0, _btnMenu.Height));
             };
             _btnClose.Click += (s, e) => this.Close();
+            _titleBar.Controls.Add(_titleLabel);
             _titleBar.Controls.Add(_btnMenu);
             _titleBar.Controls.Add(_btnClose);
             _titleBar.MouseDown += TitleBar_MouseDown;
@@ -1904,6 +1828,10 @@ namespace SimpleBrightness
             int margin = DpiUtil.ScalePx(screen, 10);
 
             // 高度按内容自适应，但不超过工作区；超出时出现滚动条（4-5 个显示器内通常无需滚动）
+            // 标题栏高度跟随按钮实际高度，避免按钮下半部分被裁掉
+            int barPad = DpiUtil.ScalePx(screen, 6);
+            _titleBar.Height = Math.Max(_btnClose.Height + barPad * 2, DpiUtil.ScalePx(screen, 40));
+
             var pref = _mainPanel.PreferredSize;
             int totalPref = _titleBar.Height + pref.Height;
             int maxHeight = screen.WorkingArea.Height - margin * 2;
@@ -1921,6 +1849,14 @@ namespace SimpleBrightness
             if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + DpiUtil.ScalePx(screen, 50); 
             if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + margin; 
             this.Location = new Point(x, y); 
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            PerformLayout();
+            LayoutTitleBar();
+            ApplyWindowRegion();
         }
 
         protected override CreateParams CreateParams
@@ -1960,6 +1896,12 @@ namespace SimpleBrightness
             int y = (_titleBar.Height - _btnClose.Height) / 2;
             _btnClose.Location = new Point(_titleBar.Width - _btnClose.Width - margin, y);
             _btnMenu.Location = new Point(_btnClose.Left - _btnMenu.Width - gap, y);
+
+            if (_titleLabel != null)
+            {
+                int left = DpiUtil.ScalePx(Screen.FromControl(this), 12);
+                _titleLabel.Location = new Point(left, (_titleBar.Height - _titleLabel.Height) / 2);
+            }
         }
 
         private void TitleBar_MouseDown(object? sender, MouseEventArgs e)
@@ -1997,20 +1939,15 @@ namespace SimpleBrightness
             Color bg = ThemeManager.Background;
             this.BackColor = bg;
             if (_titleBar != null) _titleBar.BackColor = bg;
+            if (_titleLabel != null) _titleLabel.BackColor = bg;
             if (_btnMenu != null) _btnMenu.BackColor = bg;
             if (_btnClose != null) _btnClose.BackColor = bg;
             if (_scrollHost != null) _scrollHost.BackColor = bg;
             if (_mainPanel != null) _mainPanel.BackColor = bg;
 
-            if (IsHandleCreated)
-            {
-                if (transparent)
-                    Windows11Style.ApplyAcrylicBlur(this.Handle, ThemeManager.IsDarkMode);
-                else
-                    Windows11Style.DisableAcrylicBlur(this.Handle);
-            }
-
+            // 半透明用窗口 Opacity 实现（不使用未公开的亚克力 API，避免整窗发白）
             this.Opacity = opacity;
+            ApplyWindowRegion();
             Invalidate(true);
         }
         
