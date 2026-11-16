@@ -885,6 +885,11 @@ namespace SimpleBrightness
                 {
                     ReloadMonitorsSafe();
                 }
+                if (form.UiStyleChanged)
+                {
+                    var main = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
+                    main?.ApplyUiStyle();
+                }
             };
             form.Show();
         }
@@ -1599,6 +1604,8 @@ namespace SimpleBrightness
         public string HotkeyDecrease { get; set; } = "Ctrl+F6";  // Default hotkey for brightness decrease
         public string TrayIconStyle { get; set; } = "Hybrid";  // Hybrid, Minimalist, Transparent
         public bool ShowUnsupportedMonitors { get; set; } = false; // 是否显示不支持亮度控制（如 DisplayHDR 虚拟屏）的 DDC 设备
+        public bool TransparentWindow { get; set; } = true;  // 控制中心半透明磨砂模式
+        public int WindowOpacity { get; set; } = 85;         // 半透明模式下的窗口不透明度（50-100）
         public List<string> HiddenMonitors { get; set; } = new List<string>(); 
         public Dictionary<string, string> CustomNames { get; set; } = new Dictionary<string, string>(); 
         public Dictionary<string, Dictionary<int, int>> Curves { get; set; } = new Dictionary<string, Dictionary<int, int>>(); 
@@ -1781,6 +1788,7 @@ namespace SimpleBrightness
         [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); 
         [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
         [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam); 
+        [DllImport("user32.dll")] public static extern bool ReleaseCapture();
         [DllImport("shell32.dll", SetLastError = true)]
         public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out Rect iconLocation);
         

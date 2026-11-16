@@ -186,6 +186,90 @@ namespace SimpleBrightness
             int backdrop = 3; // DWMSBT_TRANSIENTWINDOW
             NativeMethods.DwmSetWindowAttribute(form.Handle, 38, ref backdrop, sizeof(int));
         }
+
+        // ================== 经典窗口亚克力模糊（Win10 1803+） ==================
+        private enum AccentState
+        {
+            ACCENT_DISABLED = 0,
+            ACCENT_ENABLE_GRADIENT = 1,
+            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+            ACCENT_ENABLE_BLURBEHIND = 3,
+            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AccentPolicy
+        {
+            public AccentState AccentState;
+            public int AccentFlags;
+            public int GradientColor;
+            public int AnimationId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WindowCompositionAttributeData
+        {
+            public int Attribute;
+            public IntPtr Data;
+            public int SizeOfData;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        private const int WCA_ACCENT_POLICY = 19;
+
+        /// <summary>启用亚克力模糊；失败时静默回退为普通半透明</summary>
+        public static void ApplyAcrylicBlur(IntPtr hwnd, bool darkMode, byte alpha = 0xCC)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                // GradientColor 格式为 AABBGGRR
+                int tint = darkMode ? 0x202020 : 0xF0F0F0;
+                var policy = new AccentPolicy
+                {
+                    AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
+                    AccentFlags = 2,
+                    GradientColor = (alpha << 24) | tint,
+                    AnimationId = 0
+                };
+                SetAccentPolicy(hwnd, policy);
+            }
+            catch { }
+        }
+
+        public static void DisableAcrylicBlur(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            try
+            {
+                var policy = new AccentPolicy { AccentState = AccentState.ACCENT_DISABLED };
+                SetAccentPolicy(hwnd, policy);
+            }
+            catch { }
+        }
+
+        private static void SetAccentPolicy(IntPtr hwnd, AccentPolicy policy)
+        {
+            int size = Marshal.SizeOf<AccentPolicy>();
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.StructureToPtr(policy, buffer, false);
+                var data = new WindowCompositionAttributeData
+                {
+                    Attribute = WCA_ACCENT_POLICY,
+                    SizeOfData = size,
+                    Data = buffer
+                };
+                SetWindowCompositionAttribute(hwnd, ref data);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
     }
     
     // ================== DPI 缩放辅助 ==================
@@ -569,6 +653,11 @@ namespace SimpleBrightness
     {
         private bool _isHovering = false;
         private bool _isPressed = false;
+
+        /// <summary>药丸形（圆角半径 = 高度/2）</summary>
+        public bool PillStyle { get; set; } = false;
+        /// <summary>半透明玻璃风格（与卡片/磨砂背景融合）</summary>
+        public bool GlassStyle { get; set; } = false;
         
         public Win11Button()
         {
@@ -590,10 +679,26 @@ namespace SimpleBrightness
             
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
-            
+
+            // 先铺一层父容器底色，避免圆角/半透明边缘出现残影
+            Color parentColor = Parent?.BackColor ?? ThemeManager.Background;
+            if (parentColor.A < 255) parentColor = ThemeManager.Background;
+            using (var bgBrush = new SolidBrush(parentColor))
+                g.FillRectangle(bgBrush, ClientRectangle);
+
+            Color fillColor = backColor;
+            if (GlassStyle)
+            {
+                int alpha = _isPressed ? 190 : (_isHovering ? 170 : 135);
+                fillColor = Color.FromArgb(alpha, backColor);
+            }
+
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
-            using (var brush = new SolidBrush(backColor))
-            using (var path = GetRoundedRect(rect, Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f))))
+            int radius = PillStyle
+                ? Height / 2
+                : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
+            using (var brush = new SolidBrush(fillColor))
+            using (var path = GetRoundedRect(rect, radius))
             {
                 g.FillPath(brush, path);
             }
@@ -1145,6 +1250,7 @@ namespace SimpleBrightness
         public string NewHotkeyIncrease { get; private set; } = "";
         public string NewHotkeyDecrease { get; private set; } = "";
         public bool MonitorFilterChanged { get; private set; } = false;
+        public bool UiStyleChanged { get; private set; } = false;
         public bool TrayIconChanged { get; private set; } = false;
         public string NewTrayIconStyle { get; private set; } = "";
         
@@ -1333,6 +1439,37 @@ namespace SimpleBrightness
             };
             panel.Controls.Add(chkUnsupported);
 
+            CheckBox chkTransparent = new CheckBox {
+                Text = "半透明磨砂窗口（关闭则标题栏与主体统一为不透明主题）",
+                AutoSize = true,
+                Checked = config.TransparentWindow,
+                Font = new Font("Segoe UI Variable Text", 10),
+                ForeColor = ThemeManager.TextSecondary,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            panel.Controls.Add(chkTransparent);
+
+            Label lblOpacity = new Label {
+                Text = "窗口透明度 (50-100%):",
+                AutoSize = true,
+                Font = new Font("Segoe UI Variable Text", 10),
+                ForeColor = ThemeManager.TextSecondary
+            };
+            panel.Controls.Add(lblOpacity);
+
+            NumericUpDown numOpacity = new NumericUpDown {
+                Minimum = 50,
+                Maximum = 100,
+                Width = 120,
+                Value = Math.Clamp(config.WindowOpacity, 50, 100),
+                Margin = new Padding(0, 5, 0, 16),
+                BackColor = ThemeManager.Surface,
+                ForeColor = ThemeManager.Text,
+                Font = new Font("Segoe UI Variable Text", 10.5f),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            panel.Controls.Add(numOpacity);
+
             // 分组分割线
             panel.Controls.Add(new Panel {
                 Size = new Size(320, 1),
@@ -1421,6 +1558,13 @@ namespace SimpleBrightness
                 if (config.ShowUnsupportedMonitors != chkUnsupported.Checked) {
                     config.ShowUnsupportedMonitors = chkUnsupported.Checked;
                     this.MonitorFilterChanged = true;
+                }
+                bool newTransparent = chkTransparent.Checked;
+                int newOpacity = (int)numOpacity.Value;
+                if (config.TransparentWindow != newTransparent || config.WindowOpacity != newOpacity) {
+                    config.TransparentWindow = newTransparent;
+                    config.WindowOpacity = newOpacity;
+                    this.UiStyleChanged = true;
                 }
                 // Save hotkeys
                 string newIncrease = capturedIncrease;
@@ -1540,6 +1684,10 @@ namespace SimpleBrightness
         private Dictionary<string, Label> _valLabels = new Dictionary<string, Label>(); 
         private FlowLayoutPanel _mainPanel;
         private Panel _scrollHost;
+        private Panel _titleBar;
+        private Button _btnMenu;
+        private Button _btnClose;
+        private ContextMenuStrip _contextMenu;
         
         private bool IsMonitorHidden(MonitorInfo m, int index) {
             if (_config.HiddenMonitors.Contains(m.UniqueId)) return true;
@@ -1575,7 +1723,7 @@ namespace SimpleBrightness
             _context = context; 
             
             this.Text = "HM's Simple Brightness Tool";
-            this.FormBorderStyle = FormBorderStyle.FixedDialog; 
+            this.FormBorderStyle = FormBorderStyle.None; 
             this.ShowInTaskbar = false; 
             this.MaximizeBox = false;
             this.MinimizeBox = false;
@@ -1584,9 +1732,19 @@ namespace SimpleBrightness
             this.TopMost = true; 
             this.AutoSize = false;
             this.Padding = new Padding(0);
+            _contextMenu = menu;
             
             this.HandleCreated += (s, e) => {
-                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
+                ApplyWindowRegion();
+                ApplyUiStyle();
+            };
+            this.SizeChanged += (s, e) => {
+                ApplyWindowRegion();
+                LayoutTitleBar();
+            };
+            this.DpiChanged += (s, e) => {
+                ApplyWindowRegion();
+                LayoutTitleBar();
             };
             
             this.Deactivate += (s, e) => { 
@@ -1598,12 +1756,30 @@ namespace SimpleBrightness
                 else this.Activate(); 
             };
             
+            // 自定义标题栏（与主体同一底色，透明模式下一起磨砂）
+            _titleBar = new Panel {
+                Dock = DockStyle.Top,
+                Height = 44,
+                BackColor = ThemeManager.Background
+            };
+            _btnMenu = CreateTitleBarButton("☰");
+            _btnClose = CreateTitleBarButton("✕");
+            _btnMenu.Click += (s, e) => {
+                if (_contextMenu != null)
+                    _contextMenu.Show(_btnMenu, new Point(0, _btnMenu.Height));
+            };
+            _btnClose.Click += (s, e) => this.Close();
+            _titleBar.Controls.Add(_btnMenu);
+            _titleBar.Controls.Add(_btnClose);
+            _titleBar.MouseDown += TitleBar_MouseDown;
+
             _scrollHost = new Panel {
                 Dock = DockStyle.Fill,
                 AutoScroll = true,
                 BackColor = ThemeManager.Background
             };
             this.Controls.Add(_scrollHost);
+            this.Controls.Add(_titleBar);
 
             _mainPanel = new FlowLayoutPanel { 
                 FlowDirection = FlowDirection.TopDown, 
@@ -1616,38 +1792,6 @@ namespace SimpleBrightness
                 Location = new Point(0, 0)
             }; 
             _scrollHost.Controls.Add(_mainPanel);
-            
-            // Header with title
-            Panel header = new Panel { Size = new Size(460, 58), Margin = new Padding(0, 0, 0, 0) }; 
-            Label title = new Label { 
-                Text = "控制中心", 
-                Location = new Point(0, 6), 
-                ForeColor = ThemeManager.Text, 
-                Font = new Font("Segoe UI Variable Display", 20, FontStyle.Bold), 
-                AutoSize = true 
-            }; 
-            Button btnMenu = new Button { 
-                Text = "☰", 
-                Location = new Point(420, 12), 
-                Size = new Size(40, 40), 
-                FlatStyle = FlatStyle.Flat, 
-                ForeColor = ThemeManager.Text, 
-                Cursor = Cursors.Hand,
-                BackColor = ThemeManager.Surface,
-                Font = new Font("Segoe UI", 12)
-            }; 
-            btnMenu.FlatAppearance.BorderSize = 0; 
-            btnMenu.Click += (s, e) => menu.Show(Cursor.Position); 
-            header.Controls.Add(title); 
-            header.Controls.Add(btnMenu); 
-            _mainPanel.Controls.Add(header);
-
-            // 标题与显示器列表之间的分割线
-            _mainPanel.Controls.Add(new Panel {
-                Size = new Size(460, 1),
-                BackColor = ThemeManager.Border,
-                Margin = new Padding(0, 0, 0, 12)
-            });
             
             var visibleMonitors = new List<MonitorInfo>();
             int idx = 0;
@@ -1727,7 +1871,9 @@ namespace SimpleBrightness
                     
                     Win11Button btnCurve = new Win11Button { 
                         Text = "编辑曲线", 
-                        Size = new Size(110, 34)
+                        Size = new Size(110, 34),
+                        PillStyle = true,
+                        GlassStyle = true
                     }; 
                     btnCurve.Click += (s, e) => { var editor = new CurveEditorForm(m, _config, _context); editor.Show(this); }; 
                     btnRow.Controls.Add(btnCurve); 
@@ -1735,7 +1881,9 @@ namespace SimpleBrightness
                     Win11Button btnPower = new Win11Button { 
                         Text = "⏻ 电源", 
                         Size = new Size(90, 34),
-                        BackColor = Color.FromArgb(50, 50, 50)
+                        BackColor = Color.FromArgb(70, 70, 70),
+                        PillStyle = true,
+                        GlassStyle = true
                     }; 
                     btnPower.MouseDown += (s, e) => { 
                         Task.Run(() => BrightnessController.SetPowerState(m, e.Button == MouseButtons.Left, _config.PowerOffMode)); 
@@ -1757,16 +1905,113 @@ namespace SimpleBrightness
 
             // 高度按内容自适应，但不超过工作区；超出时出现滚动条（4-5 个显示器内通常无需滚动）
             var pref = _mainPanel.PreferredSize;
+            int totalPref = _titleBar.Height + pref.Height;
             int maxHeight = screen.WorkingArea.Height - margin * 2;
-            bool needScroll = pref.Height > maxHeight;
+            bool needScroll = totalPref > maxHeight;
             int scrollbar = SystemInformation.VerticalScrollBarWidth + 2;
-            this.ClientSize = new Size(pref.Width + (needScroll ? scrollbar : 0), Math.Min(pref.Height, maxHeight));
+            this.ClientSize = new Size(pref.Width + (needScroll ? scrollbar : 0), Math.Min(totalPref, maxHeight));
+
+            PerformLayout();
+            LayoutTitleBar();
+            ApplyWindowRegion();
+            ApplyUiStyle();
 
             int x = screen.WorkingArea.Right - this.Width - margin; 
             int y = screen.WorkingArea.Bottom - this.Height - margin; 
             if (y < screen.WorkingArea.Top) y = screen.WorkingArea.Top + DpiUtil.ScalePx(screen, 50); 
             if (x < screen.WorkingArea.Left) x = screen.WorkingArea.Left + margin; 
             this.Location = new Point(x, y); 
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get {
+                var cp = base.CreateParams;
+                cp.ClassStyle |= 0x00020000; // CS_DROPSHADOW
+                return cp;
+            }
+        }
+
+        private Button CreateTitleBarButton(string text)
+        {
+            var button = new Button {
+                Text = text,
+                Size = new Size(32, 28),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = ThemeManager.Text,
+                BackColor = ThemeManager.Background,
+                Font = new Font("Segoe UI", 10),
+                Cursor = Cursors.Hand,
+                TabStop = false
+            };
+            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.MouseOverBackColor = ThemeManager.IsDarkMode ? Color.FromArgb(55, 55, 55) : Color.FromArgb(232, 232, 232);
+            button.FlatAppearance.MouseDownBackColor = ThemeManager.IsDarkMode ? Color.FromArgb(70, 70, 70) : Color.FromArgb(216, 216, 216);
+            return button;
+        }
+
+        private void LayoutTitleBar()
+        {
+            if (_titleBar == null || _btnMenu == null || _btnClose == null) return;
+            if (_titleBar.Width <= 0) return;
+
+            int margin = 8;
+            int gap = 2;
+            int y = (_titleBar.Height - _btnClose.Height) / 2;
+            _btnClose.Location = new Point(_titleBar.Width - _btnClose.Width - margin, y);
+            _btnMenu.Location = new Point(_btnClose.Left - _btnMenu.Width - gap, y);
+        }
+
+        private void TitleBar_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            NativeMethods.ReleaseCapture();
+            NativeMethods.SendMessage(this.Handle, 0xA1, 0x2, 0); // WM_NCLBUTTONDOWN / HTCAPTION
+        }
+
+        private void ApplyWindowRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            int radius = Math.Max(2, DpiUtil.ScalePx(Screen.FromControl(this), 8));
+            using (var path = new GraphicsPath())
+            {
+                int d = radius * 2;
+                path.AddArc(0, 0, d, d, 180, 90);
+                path.AddArc(Width - d, 0, d, d, 270, 90);
+                path.AddArc(Width - d, Height - d, d, d, 0, 90);
+                path.AddArc(0, Height - d, d, d, 90, 90);
+                path.CloseFigure();
+
+                var old = Region;
+                Region = new Region(path);
+                old?.Dispose();
+            }
+        }
+
+        /// <summary>应用半透明/不透明样式；标题栏与主体使用同一底色</summary>
+        public void ApplyUiStyle()
+        {
+            bool transparent = _config.TransparentWindow;
+            double opacity = transparent ? Math.Clamp(_config.WindowOpacity, 50, 100) / 100.0 : 1.0;
+
+            Color bg = ThemeManager.Background;
+            this.BackColor = bg;
+            if (_titleBar != null) _titleBar.BackColor = bg;
+            if (_btnMenu != null) _btnMenu.BackColor = bg;
+            if (_btnClose != null) _btnClose.BackColor = bg;
+            if (_scrollHost != null) _scrollHost.BackColor = bg;
+            if (_mainPanel != null) _mainPanel.BackColor = bg;
+
+            if (IsHandleCreated)
+            {
+                if (transparent)
+                    Windows11Style.ApplyAcrylicBlur(this.Handle, ThemeManager.IsDarkMode);
+                else
+                    Windows11Style.DisableAcrylicBlur(this.Handle);
+            }
+
+            this.Opacity = opacity;
+            Invalidate(true);
         }
         
         private void SetupNameMenu(Label lbl, MonitorInfo m) { 
