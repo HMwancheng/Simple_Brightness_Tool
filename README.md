@@ -1,6 +1,5 @@
-<h1>
-  <img src="https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico/Icon_App.ico" width="32" height="32" align="middle" alt="Icon" />
-  &nbsp;HM's Simple Brightness Tool
+<h1 align="left">
+  <img src="https://github.com/HMwancheng/Simple_Brightness_Tool/blob/GMN/app.ico/Icon_App.ico" width="32" height="32" align="absmiddle" alt="Icon" />&nbsp;HM's Simple Brightness Tool
 </h1>
 
 一个极致轻量、便携、现代化的 Windows 屏幕亮度控制工具。  
