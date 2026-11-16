@@ -1217,8 +1217,8 @@ namespace SimpleBrightness
                             string uniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
                             string name = config.CustomNames.TryGetValue(uniqueId, out var customName) ? customName : originalName;
 
-                            // 过滤不支持亮度控制的 DDC 设备（Lenovo DisplayHDR 等虚拟/覆盖层）
-                            if (!config.ShowUnsupportedMonitors && !IsBrightnessSupportedDevice(originalName, pMs[i].hPhysicalMonitor))
+                            // 过滤不支持亮度控制的 DDC 设备（只读能力探测，不写硬件）
+                            if (!config.ShowUnsupportedMonitors && !IsBrightnessSupportedDevice(pMs[i].hPhysicalMonitor))
                                 continue;
 
                             detected.Add(new MonitorInfo { Type = MonitorType.DDC, Name = name, Handle = pMs[i].hPhysicalMonitor, UniqueId = uniqueId });
@@ -1372,14 +1372,12 @@ namespace SimpleBrightness
             return changed;
         }
 
-        /// <summary>判断 DDC 显示器是否真的支持亮度控制（用于过滤 DisplayHDR 等虚拟屏）</summary>
-        private static bool IsBrightnessSupportedDevice(string name, IntPtr handle)
+        /// <summary>
+        /// 判断 DDC 显示器是否真的支持亮度控制：只读探测一次 VCP 0x10，读不到就认为不支持。
+        /// 不使用名称匹配，避免误伤名称里恰好带关键字的真实显示器。
+        /// </summary>
+        private static bool IsBrightnessSupportedDevice(IntPtr handle)
         {
-            if (!string.IsNullOrEmpty(name) &&
-                name.IndexOf("DisplayHDR", StringComparison.OrdinalIgnoreCase) >= 0)
-                return false;
-
-            // 只读探测 VCP 0x10，不写硬件
             return BrightnessController.GetVCPBrightness(handle) >= 0;
         }
 
