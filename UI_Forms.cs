@@ -1405,7 +1405,7 @@ namespace SimpleBrightness
             _config = config; 
             _context = context; 
             
-            this.Text = "控制中心";
+            this.Text = "HM's Simple Brightness Tool";
             this.FormBorderStyle = FormBorderStyle.FixedDialog; 
             this.ShowInTaskbar = false; 
             this.MaximizeBox = false;
