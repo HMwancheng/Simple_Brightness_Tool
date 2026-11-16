@@ -1480,6 +1480,67 @@ namespace SimpleBrightness
         private void SetAutoStart(bool enable) { using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true)) { if (enable) key?.SetValue("SimpleBrightness", Application.ExecutablePath); else key?.DeleteValue("SimpleBrightness", false); } } 
     }
 
+    // ================== Title Bar Button（自绘，保证字形居中且不受系统按钮样式影响） ==================
+    public class TitleBarButton : Control
+    {
+        private bool _hover;
+        private bool _pressed;
+
+        public TitleBarButton(string glyph)
+        {
+            SetStyle(ControlStyles.SupportsTransparentBackColor |
+                     ControlStyles.OptimizedDoubleBuffer |
+                     ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.UserPaint, true);
+            BackColor = Color.Transparent;
+            Text = glyph;
+            Font = new Font("Segoe MDL2 Assets", 9.5f);
+            Cursor = Cursors.Hand;
+            TabStop = false;
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs e) { if (e.Button == MouseButtons.Left) { _pressed = true; Invalidate(); } base.OnMouseDown(e); }
+        protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Color parentColor = Parent?.BackColor ?? ThemeManager.Background;
+            using (var bg = new SolidBrush(parentColor))
+                g.FillRectangle(bg, ClientRectangle);
+
+            if (_hover || _pressed)
+            {
+                int alpha = _pressed ? 60 : 32;
+                using (var glow = new SolidBrush(Color.FromArgb(alpha, ThemeManager.Text)))
+                using (var path = RoundedRect(ClientRectangle, 4))
+                    g.FillPath(glow, path);
+            }
+
+            using (var brush = new SolidBrush(ThemeManager.Text))
+            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                g.DrawString(Text, Font, brush, new RectangleF(0, 0, Width, Height), sf);
+            }
+        }
+
+        private static GraphicsPath RoundedRect(Rectangle rect, int radius)
+        {
+            var path = new GraphicsPath();
+            int d = radius * 2;
+            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
+            path.AddArc(rect.Right - d - 1, rect.Y, d, d, 270, 90);
+            path.AddArc(rect.Right - d - 1, rect.Bottom - d - 1, d, d, 0, 90);
+            path.AddArc(rect.X, rect.Bottom - d - 1, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
     /// <summary>圆角卡片容器：绘制主题 Surface 背景，用于突出显示器控件范围</summary>
     public class RoundedCardPanel : FlowLayoutPanel
     {
@@ -1527,8 +1588,8 @@ namespace SimpleBrightness
         private Panel _scrollHost;
         private Panel _titleBar;
         private Label _titleLabel;
-        private Button _btnMenu;
-        private Button _btnClose;
+        private TitleBarButton _btnMenu;
+        private TitleBarButton _btnClose;
         private ContextMenuStrip _contextMenu;
         
         private bool IsMonitorHidden(MonitorInfo m, int index) {
@@ -1604,8 +1665,8 @@ namespace SimpleBrightness
                 Height = 44,
                 BackColor = ThemeManager.Background
             };
-            _btnMenu = CreateTitleBarButton("☰");
-            _btnClose = CreateTitleBarButton("✕");
+            _btnMenu = CreateTitleBarButton("\uE700");
+            _btnClose = CreateTitleBarButton("\uE711");
             _titleLabel = new Label {
                 Text = "HM's Simple Brightness Tool",
                 AutoSize = true,
@@ -1792,31 +1853,28 @@ namespace SimpleBrightness
             }
         }
 
-        private Button CreateTitleBarButton(string text)
+        private TitleBarButton CreateTitleBarButton(string glyph)
         {
-            var button = new Button {
-                Text = text,
-                Size = new Size(36, 30),
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = ThemeManager.Text,
-                BackColor = ThemeManager.Background,
-                Font = new Font("Segoe UI", 10),
-                Cursor = Cursors.Hand,
-                TabStop = false
-            };
-            button.FlatAppearance.BorderSize = 0;
-            button.FlatAppearance.MouseOverBackColor = ThemeManager.IsDarkMode ? Color.FromArgb(55, 55, 55) : Color.FromArgb(232, 232, 232);
-            button.FlatAppearance.MouseDownBackColor = ThemeManager.IsDarkMode ? Color.FromArgb(70, 70, 70) : Color.FromArgb(216, 216, 216);
-            return button;
+            return new TitleBarButton(glyph);
         }
 
         private void UpdateTitleBarHeight()
         {
             if (_titleBar == null || _btnMenu == null || _btnClose == null) return;
+
             var screen = Screen.FromControl(this);
-            int radius = DpiUtil.ScalePx(screen, 8);
-            int pad = Math.Max(DpiUtil.ScalePx(screen, 6), radius); // 至少让按钮避开圆角区域
-            int height = Math.Max(_btnMenu.Height, _btnClose.Height) + pad * 2;
+            float scale = DpiUtil.GetDpi(screen) / 96f;
+
+            // 按目标屏幕 DPI 直接给按钮定尺寸，不依赖 WinForms 自动缩放
+            int buttonWidth = Math.Max(24, (int)Math.Round(36 * scale));
+            int buttonHeight = Math.Max(20, (int)Math.Round(30 * scale));
+            var buttonSize = new Size(buttonWidth, buttonHeight);
+            if (_btnMenu.Size != buttonSize) _btnMenu.Size = buttonSize;
+            if (_btnClose.Size != buttonSize) _btnClose.Size = buttonSize;
+
+            int radius = Math.Max(2, (int)Math.Round(8 * scale));
+            int pad = Math.Max((int)Math.Round(6 * scale), radius);
+            int height = buttonHeight + pad * 2;
             if (_titleBar.Height != height) _titleBar.Height = height;
         }
 
@@ -1829,8 +1887,9 @@ namespace SimpleBrightness
             if (_titleBar.Width <= 0) return;
 
             var screen = Screen.FromControl(this);
-            int radius = DpiUtil.ScalePx(screen, 8);
-            int rightMargin = radius + DpiUtil.ScalePx(screen, 4);
+            float scale = DpiUtil.GetDpi(screen) / 96f;
+            int radius = Math.Max(2, (int)Math.Round(8 * scale));
+            int rightMargin = radius + (int)Math.Round(4 * scale);
             int gap = 2;
             int y = (_titleBar.Height - _btnClose.Height) / 2;
             _btnClose.Location = new Point(_titleBar.Width - _btnClose.Width - rightMargin, y);

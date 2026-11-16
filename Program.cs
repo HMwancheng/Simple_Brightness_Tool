@@ -86,6 +86,7 @@ namespace SimpleBrightness
             contextMenu = new ContextMenuStrip();
             contextMenu.Font = new Font("Segoe UI", 9.5f);
             contextMenu.Padding = new Padding(0, 4, 0, 4);
+            contextMenu.ShowItemToolTips = true;
             // Win11 圆角菜单
             contextMenu.HandleCreated += (s, e) => {
                 try {
@@ -114,12 +115,22 @@ namespace SimpleBrightness
             
             contextMenu.Items.Add("查看项目主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng/Simple_Brightness_Tool"));
             contextMenu.Items.Add("查看作者主页", null, (s, e) => OpenUrl("https://github.com/HMwancheng"));
-            contextMenu.Items.Add(new ToolStripMenuItem($"版本 v{Application.ProductVersion}") { Enabled = false });
+
+            // 版本号只显示 vX.Y.Z，完整构建号放在悬浮提示里
+            string fullVersion = Application.ProductVersion;
+            var versionParts = fullVersion.Split('.');
+            string shortVersion = versionParts.Length > 3
+                ? string.Join(".", versionParts.Take(3))
+                : fullVersion;
+            contextMenu.Items.Add(new ToolStripMenuItem($"版本 v{shortVersion}") {
+                Enabled = false,
+                ToolTipText = $"完整版本 {Assembly.GetExecutingAssembly().GetName().Version}"
+            });
             
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add("设置", null, (s, e) => ShowSettings());
             
-            var debugItem = new ToolStripMenuItem("🛠 调试模式 (忽略曲线)", null, (s, e) => {
+            var debugItem = new ToolStripMenuItem("🛠 调试模式", null, (s, e) => {
                 _isDebugMode = !_isDebugMode;
                 if (s is ToolStripMenuItem menuItem)
                 {
@@ -980,7 +991,7 @@ namespace SimpleBrightness
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 Color fill = IsDarkMode ? Color.FromArgb(62, 62, 62) : Color.FromArgb(232, 232, 232);
                 var rect = new Rectangle(3, 1, Math.Max(0, item.Width - 6), Math.Max(0, item.Height - 2));
-                using (var path = RoundedRect(rect, 3))
+                using (var path = RoundedRect(rect, 2))
                 using (var brush = new SolidBrush(fill))
                 {
                     e.Graphics.FillPath(brush, path);
