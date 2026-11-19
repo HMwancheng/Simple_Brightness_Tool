@@ -549,10 +549,13 @@ namespace SimpleBrightness
     }
     
     // ================== Windows 11 Style Button ==================
-    public class Win11Button : Button
+    // 直接继承 Control 而不是 Button，避免系统绘制按钮边框/焦点框
+    public class Win11Button : Control, IButtonControl
     {
         private bool _isHovering = false;
         private bool _isPressed = false;
+
+        public DialogResult DialogResult { get; set; } = DialogResult.None;
 
         /// <summary>药丸形（圆角半径 = 高度/2）</summary>
         public bool PillStyle { get; set; } = false;
@@ -563,14 +566,42 @@ namespace SimpleBrightness
         
         public Win11Button()
         {
-            FlatStyle = FlatStyle.Flat;
-            FlatAppearance.BorderSize = 0;
             BackColor = ThemeManager.Accent;
             ForeColor = Color.White;
             Font = new Font("Segoe UI Variable Text", 10f);
             Cursor = Cursors.Hand;
+            TabStop = true;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                     ControlStyles.OptimizedDoubleBuffer, true);
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
+        }
+
+        public void NotifyDefault(bool value) { }
+
+        public void PerformClick()
+        {
+            if (!Enabled) return;
+
+            Form? form = DialogResult != DialogResult.None ? FindForm() : null;
+            if (form != null) form.DialogResult = DialogResult;
+
+            OnClick(EventArgs.Empty);
+
+            // 与原 Button 行为一致：设置了 DialogResult 时点击后关闭对话框
+            if (form != null && form.Visible) form.Close();
+        }
+
+        protected override bool IsInputKey(Keys keyData) =>
+            keyData == Keys.Enter || keyData == Keys.Space || base.IsInputKey(keyData);
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Space)
+            {
+                PerformClick();
+                e.Handled = true;
+                return;
+            }
+            base.OnKeyDown(e);
         }
 
         // 背景由 OnPaint 强制整块覆盖，避免任何未绘制像素透出黑底
