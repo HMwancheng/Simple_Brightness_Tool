@@ -573,14 +573,8 @@ namespace SimpleBrightness
                      ControlStyles.OptimizedDoubleBuffer, true);
         }
 
-        // 先铺父容器底色，保证每帧背景被清除；药丸在 OnPaint 中叠加
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            Color bg = Parent?.BackColor ?? ThemeManager.Background;
-            if (bg.A < 255) bg = ThemeManager.Background;
-            using (var brush = new SolidBrush(bg))
-                e.Graphics.FillRectangle(brush, ClientRectangle);
-        }
+        // 背景由 OnPaint 强制整块覆盖，避免任何未绘制像素透出黑底
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -589,6 +583,13 @@ namespace SimpleBrightness
 
             Color bg = Parent?.BackColor ?? ThemeManager.Background;
             if (bg.A < 255) bg = ThemeManager.Background;
+
+            // SourceCopy：连同 alpha 一起覆盖，杜绝角部残留黑块
+            var oldMode = g.CompositingMode;
+            g.CompositingMode = CompositingMode.SourceCopy;
+            using (var bgBrush = new SolidBrush(bg))
+                g.FillRectangle(bgBrush, ClientRectangle);
+            g.CompositingMode = oldMode;
 
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
@@ -602,9 +603,10 @@ namespace SimpleBrightness
                 fillColor = Blend(backColor, bg, alpha);
             }
 
-            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
+            // 路径使用完整宽高，避免药丸圆角在边缘被截断
+            var rect = new Rectangle(0, 0, Width, Height);
             int radius = PillStyle
-                ? Height / 2
+                ? Math.Max(1, Height / 2)
                 : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
             using (var brush = new SolidBrush(fillColor))
             using (var path = GetRoundedRect(rect, radius))
