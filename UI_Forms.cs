@@ -604,34 +604,13 @@ namespace SimpleBrightness
             base.OnKeyDown(e);
         }
 
-        // 背景由 OnPaint 强制整块覆盖，避免任何未绘制像素透出黑底
-        protected override void OnPaintBackground(PaintEventArgs e) { }
-
-        protected override void OnHandleCreated(EventArgs e)
+        // 先铺父容器底色（保证无残影），再用抗锯齿绘制药丸，边缘平滑
+        protected override void OnPaintBackground(PaintEventArgs e)
         {
-            base.OnHandleCreated(e);
-            UpdateButtonRegion();
-        }
-
-        protected override void OnSizeChanged(EventArgs e)
-        {
-            base.OnSizeChanged(e);
-            UpdateButtonRegion();
-        }
-
-        // 控件本身裁成药丸形：矩形区域不存在，也就不可能再出现矩形底色/边框
-        private void UpdateButtonRegion()
-        {
-            if (Width <= 0 || Height <= 0) return;
-            int radius = PillStyle
-                ? Math.Max(1, Height / 2)
-                : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
-            using (var path = GetRoundedRect(new Rectangle(0, 0, Width, Height), radius))
-            {
-                var old = Region;
-                Region = new Region(path);
-                old?.Dispose();
-            }
+            Color bg = Parent?.BackColor ?? ThemeManager.Background;
+            if (bg.A < 255) bg = ThemeManager.Background;
+            using (var brush = new SolidBrush(bg))
+                e.Graphics.FillRectangle(brush, ClientRectangle);
         }
         
         protected override void OnPaint(PaintEventArgs e)
@@ -654,10 +633,10 @@ namespace SimpleBrightness
                 fillColor = Blend(backColor, bg, alpha);
             }
 
-            // 路径使用完整宽高，避免药丸圆角在边缘被截断
-            var rect = new Rectangle(0, 0, Width, Height);
+            // 内缩 1px，圆角半径取 (Height-1)/2，避免弧线被控件边缘裁切
+            var rect = new Rectangle(0, 0, Width - 1, Height - 1);
             int radius = PillStyle
-                ? Math.Max(1, Height / 2)
+                ? Math.Max(1, (Height - 1) / 2)
                 : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
             using (var brush = new SolidBrush(fillColor))
             using (var path = GetRoundedRect(rect, radius))
@@ -688,7 +667,6 @@ namespace SimpleBrightness
         protected override void OnDpiChangedAfterParent(EventArgs e)
         {
             base.OnDpiChangedAfterParent(e);
-            UpdateButtonRegion();
             Invalidate();
         }
         
