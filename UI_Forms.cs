@@ -570,11 +570,17 @@ namespace SimpleBrightness
             Font = new Font("Segoe UI Variable Text", 10f);
             Cursor = Cursors.Hand;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
+                     ControlStyles.OptimizedDoubleBuffer, true);
         }
 
-        // 全部像素都在 OnPaint 内绘制（含整块背景），避免双缓冲残留
-        protected override void OnPaintBackground(PaintEventArgs e) { }
+        // 先铺父容器底色，保证每帧背景被清除；药丸在 OnPaint 中叠加
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Color bg = Parent?.BackColor ?? ThemeManager.Background;
+            if (bg.A < 255) bg = ThemeManager.Background;
+            using (var brush = new SolidBrush(bg))
+                e.Graphics.FillRectangle(brush, ClientRectangle);
+        }
         
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -583,10 +589,6 @@ namespace SimpleBrightness
 
             Color bg = Parent?.BackColor ?? ThemeManager.Background;
             if (bg.A < 255) bg = ThemeManager.Background;
-
-            // 先完整覆盖控件矩形，清掉上一帧残留
-            using (var bgBrush = new SolidBrush(bg))
-                g.FillRectangle(bgBrush, ClientRectangle);
 
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
@@ -1861,6 +1863,8 @@ namespace SimpleBrightness
             PerformLayout();
             LayoutTitleBar();
             ApplyWindowRegion();
+            // 等首帧绘制完成后再应用透明度，避免启动瞬间的透明/白底闪烁
+            BeginInvoke(new Action(ApplyUiStyle));
         }
 
         protected override CreateParams CreateParams
@@ -1961,8 +1965,9 @@ namespace SimpleBrightness
             if (_scrollHost != null) _scrollHost.BackColor = bg;
             if (_mainPanel != null) _mainPanel.BackColor = bg;
 
-            // 半透明用窗口 Opacity 实现（不使用未公开的亚克力 API，避免整窗发白）
-            this.Opacity = opacity;
+            // 半透明用窗口 Opacity 实现；窗口还没显示时先不设置，避免启动瞬间出现白底/黑框
+            if (this.Visible)
+                this.Opacity = opacity;
             ApplyWindowRegion();
             Invalidate(true);
         }
