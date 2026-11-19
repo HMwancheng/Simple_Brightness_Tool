@@ -1322,18 +1322,22 @@ namespace SimpleBrightness
             panel.Controls.Add(cmbTrayIcon);
 
             CheckBox chkUnsupported = new CheckBox {
-                Text = "显示不支持亮度控制的显示器（如 DisplayHDR 虚拟屏）",
-                AutoSize = true,
+                Text = "显示不支持亮度控制的显示器\n（如 DisplayHDR 虚拟屏）",
+                AutoSize = false,
+                Width = 352,
+                Height = 44,
                 Checked = config.ShowUnsupportedMonitors,
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary,
-                Margin = new Padding(0, 0, 0, 16)
+                Margin = new Padding(0, 0, 0, 12)
             };
             panel.Controls.Add(chkUnsupported);
 
             CheckBox chkTransparent = new CheckBox {
-                Text = "半透明窗口（关闭则标题栏与主体统一为不透明主题）",
-                AutoSize = true,
+                Text = "半透明窗口\n（关闭则标题栏与主体统一为不透明主题）",
+                AutoSize = false,
+                Width = 352,
+                Height = 44,
                 Checked = config.TransparentWindow,
                 Font = new Font("Segoe UI Variable Text", 10),
                 ForeColor = ThemeManager.TextSecondary,
@@ -1502,11 +1506,31 @@ namespace SimpleBrightness
             };
             this.Controls.Add(footer);
 
+            // 顶部分隔线 + 左侧版本号
+            Panel footerDivider = new Panel {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = ThemeManager.Border
+            };
+            footer.Controls.Add(footerDivider);
+
+            string shortVersion = Application.ProductVersion.Split('+')[0];
+            Label lblVersion = new Label {
+                Text = $"v{shortVersion}",
+                AutoSize = true,
+                ForeColor = ThemeManager.TextSecondary,
+                Font = new Font("Segoe UI", 9),
+                BackColor = ThemeManager.Background
+            };
+            footer.Controls.Add(lblVersion);
+            lblVersion.Location = new Point(20, (footer.Height - lblVersion.Height) / 2);
+
             btnOk.Anchor = AnchorStyles.Right;
             btnOk.Location = new Point(footer.ClientSize.Width - btnOk.Width - 20, (footer.Height - btnOk.Height) / 2);
             footer.Controls.Add(btnOk);
             footer.Resize += (s, e) => {
                 btnOk.Location = new Point(footer.ClientSize.Width - btnOk.Width - 20, (footer.Height - btnOk.Height) / 2);
+                lblVersion.Location = new Point(20, (footer.Height - lblVersion.Height) / 2);
             };
         } 
         private static void StyleCombo(ComboBox combo)
