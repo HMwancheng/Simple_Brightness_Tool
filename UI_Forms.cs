@@ -569,32 +569,35 @@ namespace SimpleBrightness
             ForeColor = Color.White;
             Font = new Font("Segoe UI Variable Text", 10f);
             Cursor = Cursors.Hand;
-            SetStyle(ControlStyles.UserPaint |
-                     ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
         }
 
-        // 先用父容器底色铺满按钮区域，再绘制药丸/半透明填充，避免透出后方残影
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            Color bg = Parent?.BackColor ?? ThemeManager.Background;
-            if (bg.A < 255) bg = ThemeManager.Background;
-            using (var brush = new SolidBrush(bg))
-                e.Graphics.FillRectangle(brush, ClientRectangle);
-        }
+        // 全部像素都在 OnPaint 内绘制（含整块背景），避免双缓冲残留
+        protected override void OnPaintBackground(PaintEventArgs e) { }
         
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            
+
+            Color bg = Parent?.BackColor ?? ThemeManager.Background;
+            if (bg.A < 255) bg = ThemeManager.Background;
+
+            // 先完整覆盖控件矩形，清掉上一帧残留
+            using (var bgBrush = new SolidBrush(bg))
+                g.FillRectangle(bgBrush, ClientRectangle);
+
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
+            if (backColor.A < 255) backColor = Color.FromArgb(255, backColor);
 
+            // 玻璃风格改为与底色混合成不透明色，避免半透明叠加产生残影
             Color fillColor = backColor;
             if (GlassStyle)
             {
                 int alpha = _isPressed ? 190 : (_isHovering ? 170 : 135);
-                fillColor = Color.FromArgb(alpha, backColor);
+                fillColor = Blend(backColor, bg, alpha);
             }
 
             var rect = new Rectangle(0, 0, Width - 1, Height - 1);
@@ -633,6 +636,16 @@ namespace SimpleBrightness
             Invalidate();
         }
         
+        private static Color Blend(Color fg, Color bg, int alpha)
+        {
+            int a = Math.Clamp(alpha, 0, 255);
+            return Color.FromArgb(
+                255,
+                (fg.R * a + bg.R * (255 - a)) / 255,
+                (fg.G * a + bg.G * (255 - a)) / 255,
+                (fg.B * a + bg.B * (255 - a)) / 255);
+        }
+
         private GraphicsPath GetRoundedRect(Rectangle rect, int radius)
         {
             var path = new GraphicsPath();
