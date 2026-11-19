@@ -606,6 +606,33 @@ namespace SimpleBrightness
 
         // 背景由 OnPaint 强制整块覆盖，避免任何未绘制像素透出黑底
         protected override void OnPaintBackground(PaintEventArgs e) { }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            UpdateButtonRegion();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            UpdateButtonRegion();
+        }
+
+        // 控件本身裁成药丸形：矩形区域不存在，也就不可能再出现矩形底色/边框
+        private void UpdateButtonRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            int radius = PillStyle
+                ? Math.Max(1, Height / 2)
+                : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
+            using (var path = GetRoundedRect(new Rectangle(0, 0, Width, Height), radius))
+            {
+                var old = Region;
+                Region = new Region(path);
+                old?.Dispose();
+            }
+        }
         
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -614,13 +641,6 @@ namespace SimpleBrightness
 
             Color bg = Parent?.BackColor ?? ThemeManager.Background;
             if (bg.A < 255) bg = ThemeManager.Background;
-
-            // SourceCopy：连同 alpha 一起覆盖，杜绝角部残留黑块
-            var oldMode = g.CompositingMode;
-            g.CompositingMode = CompositingMode.SourceCopy;
-            using (var bgBrush = new SolidBrush(bg))
-                g.FillRectangle(bgBrush, ClientRectangle);
-            g.CompositingMode = oldMode;
 
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
@@ -668,6 +688,7 @@ namespace SimpleBrightness
         protected override void OnDpiChangedAfterParent(EventArgs e)
         {
             base.OnDpiChangedAfterParent(e);
+            UpdateButtonRegion();
             Invalidate();
         }
         
