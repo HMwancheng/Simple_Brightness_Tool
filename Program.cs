@@ -85,7 +85,7 @@ namespace SimpleBrightness
 
             contextMenu = new ContextMenuStrip();
             contextMenu.Font = new Font("Segoe UI", 9f);
-            contextMenu.Padding = new Padding(0, 7, 0, 7);
+            contextMenu.Padding = new Padding(0, 10, 0, 10);
             contextMenu.ShowItemToolTips = true;
             // Win11 圆角菜单
             contextMenu.HandleCreated += (s, e) => {
@@ -959,7 +959,7 @@ namespace SimpleBrightness
 
         private void ApplyMenuItemStyle(ToolStripItem item, bool isDarkMode)
         {
-            item.Padding = new Padding(2, 5, 2, 5);
+            item.Padding = new Padding(2, 7, 2, 7);
             if (item is ToolStripMenuItem menuItem)
             {
                 menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
@@ -990,11 +990,16 @@ namespace SimpleBrightness
             {
             }
 
-            // 文字强制在条目内容区垂直居中，避免不同 DPI 下偏上/偏下
+            // 文字在整个条目高度内垂直居中（TextRectangle 本身偏上，不能直接用它做居中）
             protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
             {
+                var rect = new Rectangle(
+                    e.TextRectangle.X,
+                    0,
+                    Math.Max(1, e.TextRectangle.Width),
+                    e.Item.Height);
                 var flags = e.TextFormat | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine;
-                TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, e.TextRectangle, e.TextColor, flags);
+                TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, rect, e.TextColor, flags);
             }
 
             protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
