@@ -170,21 +170,6 @@ namespace SimpleBrightness
                 NativeMethods.DwmSetWindowAttribute(form.Handle, 38, ref backdrop, sizeof(int));
             }
         }
-        
-        public static void ApplyAcrylic(Form form, bool darkMode = true)
-        {
-            if (!IsWindows11()) return;
-            
-            int corner = 2;
-            NativeMethods.DwmSetWindowAttribute(form.Handle, 33, ref corner, sizeof(int));
-            
-            int dark = darkMode ? 1 : 0;
-            NativeMethods.DwmSetWindowAttribute(form.Handle, 20, ref dark, sizeof(int));
-            
-            // Acrylic backdrop
-            int backdrop = 3; // DWMSBT_TRANSIENTWINDOW
-            NativeMethods.DwmSetWindowAttribute(form.Handle, 38, ref backdrop, sizeof(int));
-        }
     }
     
     // ================== DPI 缩放辅助 ==================
@@ -588,29 +573,13 @@ namespace SimpleBrightness
                      ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         }
 
-        // 按钮外轮廓裁剪成药丸/圆角矩形，彻底消除矩形底与背景拼接痕迹
-        protected override void OnHandleCreated(EventArgs e)
+        // 先用父容器底色铺满按钮区域，再绘制药丸/半透明填充，避免透出后方残影
+        protected override void OnPaintBackground(PaintEventArgs e)
         {
-            base.OnHandleCreated(e);
-            UpdateButtonRegion();
-        }
-
-        protected override void OnSizeChanged(EventArgs e)
-        {
-            base.OnSizeChanged(e);
-            UpdateButtonRegion();
-        }
-
-        private void UpdateButtonRegion()
-        {
-            if (Width <= 0 || Height <= 0) return;
-            int radius = PillStyle ? Height / 2 : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
-            using (var path = GetRoundedRect(new Rectangle(0, 0, Width, Height), radius))
-            {
-                var old = Region;
-                Region = new Region(path);
-                old?.Dispose();
-            }
+            Color bg = Parent?.BackColor ?? ThemeManager.Background;
+            if (bg.A < 255) bg = ThemeManager.Background;
+            using (var brush = new SolidBrush(bg))
+                e.Graphics.FillRectangle(brush, ClientRectangle);
         }
         
         protected override void OnPaint(PaintEventArgs e)
@@ -661,7 +630,6 @@ namespace SimpleBrightness
         protected override void OnDpiChangedAfterParent(EventArgs e)
         {
             base.OnDpiChangedAfterParent(e);
-            UpdateButtonRegion();
             Invalidate();
         }
         
@@ -1066,7 +1034,7 @@ namespace SimpleBrightness
             this.ForeColor = ThemeManager.Text;
             
             this.HandleCreated += (s, e) => {
-                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
+                Windows11Style.ApplyWindowStyle(this, ThemeManager.IsDarkMode, false);
             };
             
             Label title = new Label { 
@@ -1142,7 +1110,7 @@ namespace SimpleBrightness
             this.ForeColor = ThemeManager.Text;
             
             this.HandleCreated += (s, e) => {
-                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
+                Windows11Style.ApplyWindowStyle(this, ThemeManager.IsDarkMode, false);
             };
             
             // Create scrollable container with custom scrollbar
@@ -2100,7 +2068,7 @@ namespace SimpleBrightness
             this.KeyPreview = true;
             
             this.HandleCreated += (s, e) => {
-                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
+                Windows11Style.ApplyWindowStyle(this, ThemeManager.IsDarkMode, false);
             };
             
             // Main TableLayoutPanel
@@ -2852,7 +2820,7 @@ namespace SimpleBrightness
             this.ForeColor = ThemeManager.Text;
             
             this.HandleCreated += (s, e) => {
-                Windows11Style.ApplyAcrylic(this, ThemeManager.IsDarkMode);
+                Windows11Style.ApplyWindowStyle(this, ThemeManager.IsDarkMode, false);
             };
             
             Label l = new Label { 
