@@ -1494,11 +1494,20 @@ namespace SimpleBrightness
                 this.Close(); 
             }; 
             
-            // Add floating button to form directly (not to scroll panel)
-            btnOk.Location = new Point(this.ClientSize.Width - 140, this.ClientSize.Height - 64);
-            btnOk.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            this.Controls.Add(btnOk);
-            btnOk.BringToFront();
+            // 底部固定栏：给浮动按钮提供单一同色背景，避免按钮矩形底与滚动内容产生色差
+            Panel footer = new Panel {
+                Dock = DockStyle.Bottom,
+                Height = 64,
+                BackColor = ThemeManager.Background
+            };
+            this.Controls.Add(footer);
+
+            btnOk.Anchor = AnchorStyles.Right;
+            btnOk.Location = new Point(footer.ClientSize.Width - btnOk.Width - 20, (footer.Height - btnOk.Height) / 2);
+            footer.Controls.Add(btnOk);
+            footer.Resize += (s, e) => {
+                btnOk.Location = new Point(footer.ClientSize.Width - btnOk.Width - 20, (footer.Height - btnOk.Height) / 2);
+            };
         } 
         private static void StyleCombo(ComboBox combo)
         {
