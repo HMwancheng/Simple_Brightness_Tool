@@ -573,6 +573,8 @@ namespace SimpleBrightness
         public bool PillStyle { get; set; } = false;
         /// <summary>半透明玻璃风格（与卡片/磨砂背景融合）</summary>
         public bool GlassStyle { get; set; } = false;
+        /// <summary>Segoe MDL2 Assets 图标（可选，绘制在文字左侧）</summary>
+        public string? IconGlyph { get; set; }
         
         public Win11Button()
         {
@@ -582,12 +584,34 @@ namespace SimpleBrightness
             ForeColor = Color.White;
             Font = new Font("Segoe UI Variable Text", 10f);
             Cursor = Cursors.Hand;
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | 
-                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
+            SetStyle(ControlStyles.UserPaint |
+                     ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         }
 
-        // 完全自己绘制背景，避免系统按钮的矩形底/焦点框残留
-        protected override void OnPaintBackground(PaintEventArgs e) { }
+        // 按钮外轮廓裁剪成药丸/圆角矩形，彻底消除矩形底与背景拼接痕迹
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            UpdateButtonRegion();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            UpdateButtonRegion();
+        }
+
+        private void UpdateButtonRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            int radius = PillStyle ? Height / 2 : Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
+            using (var path = GetRoundedRect(new Rectangle(0, 0, Width, Height), radius))
+            {
+                var old = Region;
+                Region = new Region(path);
+                old?.Dispose();
+            }
+        }
         
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -596,12 +620,6 @@ namespace SimpleBrightness
             
             Color backColor = _isPressed ? Color.FromArgb(0, 100, 180) :
                              _isHovering ? Color.FromArgb(0, 130, 230) : BackColor;
-
-            // 先铺一层父容器底色，避免圆角/半透明边缘出现残影
-            Color parentColor = Parent?.BackColor ?? ThemeManager.Background;
-            if (parentColor.A < 255) parentColor = ThemeManager.Background;
-            using (var bgBrush = new SolidBrush(parentColor))
-                g.FillRectangle(bgBrush, ClientRectangle);
 
             Color fillColor = backColor;
             if (GlassStyle)
@@ -619,14 +637,31 @@ namespace SimpleBrightness
             {
                 g.FillPath(brush, path);
             }
-            
-            TextRenderer.DrawText(g, Text, Font, rect, ForeColor, 
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+
+            if (string.IsNullOrEmpty(IconGlyph))
+            {
+                TextRenderer.DrawText(g, Text, Font, rect, ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+            else
+            {
+                using var iconFont = new Font("Segoe MDL2 Assets", Font.Size * 0.95f);
+                Size iconSize = TextRenderer.MeasureText(g, IconGlyph, iconFont, new Size(1000, Height), TextFormatFlags.NoPadding);
+                Size textSize = TextRenderer.MeasureText(g, Text, Font, new Size(1000, Height), TextFormatFlags.NoPadding);
+                int gap = Math.Max(2, (int)Math.Round(6 * DeviceDpi / 96f));
+                int totalWidth = iconSize.Width + gap + textSize.Width;
+                int x = Math.Max(0, (Width - totalWidth) / 2);
+                int iconY = (Height - iconSize.Height) / 2;
+                int textY = (Height - textSize.Height) / 2;
+                TextRenderer.DrawText(g, IconGlyph, iconFont, new Point(x, iconY), ForeColor, TextFormatFlags.NoPadding);
+                TextRenderer.DrawText(g, Text, Font, new Point(x + iconSize.Width + gap, textY), ForeColor, TextFormatFlags.NoPadding);
+            }
         }
 
         protected override void OnDpiChangedAfterParent(EventArgs e)
         {
             base.OnDpiChangedAfterParent(e);
+            UpdateButtonRegion();
             Invalidate();
         }
         
@@ -1076,6 +1111,7 @@ namespace SimpleBrightness
                 Left = 380, 
                 Width = 100, 
                 Height = 36,
+                PillStyle = true,
                 DialogResult = DialogResult.OK
             };
             
@@ -1390,6 +1426,7 @@ namespace SimpleBrightness
                 Text = "保存设置", 
                 Width = 120, 
                 Height = 44, 
+                PillStyle = true,
                 DialogResult = DialogResult.OK
             }; 
             btnOk.Click += (s, e) => { 
@@ -1791,7 +1828,8 @@ namespace SimpleBrightness
                     btnRow.Controls.Add(btnCurve); 
                     
                     Win11Button btnPower = new Win11Button { 
-                        Text = "⏻ 电源", 
+                        Text = "电源", 
+                        IconGlyph = "\uE7E8",
                         Size = new Size(90, 34),
                         BackColor = Color.FromArgb(70, 70, 70),
                         PillStyle = true,
@@ -2168,6 +2206,7 @@ namespace SimpleBrightness
             Win11Button saveBtn = new Win11Button { 
                 Text = "保存并生效", 
                 Size = new Size(120, 36),
+                PillStyle = true,
                 BackColor = ThemeManager.Accent
             };
             rightControls.Controls.Add(saveBtn);
@@ -2839,6 +2878,7 @@ namespace SimpleBrightness
                 Top = 100, 
                 Left = 250, 
                 Size = new Size(100, 36),
+                PillStyle = true,
                 DialogResult = DialogResult.OK
             };
             b.Click += (s, e) => { ResultText = t.Text; this.Close(); };

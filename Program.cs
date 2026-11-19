@@ -85,7 +85,7 @@ namespace SimpleBrightness
 
             contextMenu = new ContextMenuStrip();
             contextMenu.Font = new Font("Segoe UI", 9f);
-            contextMenu.Padding = new Padding(0, 4, 0, 4);
+            contextMenu.Padding = new Padding(0, 7, 0, 7);
             contextMenu.ShowItemToolTips = true;
             // Win11 圆角菜单
             contextMenu.HandleCreated += (s, e) => {
@@ -959,7 +959,7 @@ namespace SimpleBrightness
 
         private void ApplyMenuItemStyle(ToolStripItem item, bool isDarkMode)
         {
-            item.Padding = new Padding(2, 3, 2, 3);
+            item.Padding = new Padding(2, 5, 2, 5);
             if (item is ToolStripMenuItem menuItem)
             {
                 menuItem.BackColor = isDarkMode ? Color.FromArgb(45, 45, 45) : SystemColors.Control;
@@ -988,6 +988,13 @@ namespace SimpleBrightness
             // 去掉右键菜单四周的 1px 描边
             protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
             {
+            }
+
+            // 文字强制在条目内容区垂直居中，避免不同 DPI 下偏上/偏下
+            protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+            {
+                var flags = e.TextFormat | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine;
+                TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, e.TextRectangle, e.TextColor, flags);
             }
 
             protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
@@ -1184,21 +1191,12 @@ namespace SimpleBrightness
                 return true;
             }, IntPtr.Zero);
 
-            // 更新显示器列表中的句柄
+            // 更新显示器列表中的句柄（不新增条目，避免电源操作后出现重复显示器）
             if (foundHandle != IntPtr.Zero) {
                 lock (_monitorsLock) {
                     var existingMonitor = monitors.FirstOrDefault(m => m.UniqueId == uniqueId);
                     if (existingMonitor != null) {
                         existingMonitor.Handle = foundHandle;
-                    } else {
-                        // 如果显示器不存在于列表中，添加它
-                        monitors.Add(new MonitorInfo { 
-                            Type = MonitorType.DDC, 
-                            Handle = foundHandle, 
-                            UniqueId = uniqueId,
-                            Name = "外接显示器",
-                            LastBrightness = 50
-                        });
                     }
                 }
             }
@@ -1239,6 +1237,11 @@ namespace SimpleBrightness
 
                             string originalName = new string(pMs[i].szPhysicalMonitorDescription).Trim('\0');
                             string uniqueId = GetMonitorUniqueId(originalName, pMs[i].hPhysicalMonitor, i);
+
+                            // 同一显示输出在电源循环后可能出现新旧两个物理句柄，按 UniqueId 去重
+                            if (detected.Any(d => d.Type == MonitorType.DDC && d.UniqueId == uniqueId))
+                                continue;
+
                             string name = config.CustomNames.TryGetValue(uniqueId, out var customName) ? customName : originalName;
 
                             // 过滤不支持亮度控制的 DDC 设备（只读能力探测，不写硬件）
