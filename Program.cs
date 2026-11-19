@@ -74,6 +74,9 @@ namespace SimpleBrightness
             config = AppConfig.Load();
             config.Save();
 
+            // 应用配置里的主题（若为“跟随系统”则重新检测），避免启动后与设置项不一致
+            ThemeManager.ThemeMode = config.ThemeMode;
+
             // 注册显示器句柄刷新回调（用于电源控制）
             BrightnessController.RefreshMonitorHandleCallback = GetLatestMonitorHandle;
 
@@ -897,8 +900,14 @@ namespace SimpleBrightness
                 }
                 if (form.UiStyleChanged)
                 {
+                    // 主题/透明度变化：控件底色与字色在构造时固定，重建主窗口才能整体换色
                     var main = Application.OpenForms.OfType<BrightnessForm>().FirstOrDefault();
-                    main?.ApplyUiStyle();
+                    if (main != null && !main.IsDisposed)
+                    {
+                        bool wasVisible = main.Visible;
+                        main.Close();
+                        if (wasVisible) ShowBrightnessWindow();
+                    }
                 }
             };
             form.Show();

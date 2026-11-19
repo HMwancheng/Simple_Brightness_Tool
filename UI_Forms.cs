@@ -1475,14 +1475,17 @@ namespace SimpleBrightness
                 config.HotkeyIncrease = newIncrease;
                 config.HotkeyDecrease = newDecrease;
                 // Save theme mode
+                bool wasDarkMode = ThemeManager.IsDarkMode;
                 config.ThemeMode = cmbTheme.SelectedIndex switch {
                     0 => ThemeMode.Light,
                     1 => ThemeMode.Dark,
-                    2 => ThemeMode.System,
                     _ => ThemeMode.System
                 };
                 // Apply theme mode immediately
                 ThemeManager.ThemeMode = config.ThemeMode;
+                // 控件底色/字色在创建时就固定了，明暗切换后需要重建主窗口才能整体换色
+                if (ThemeManager.IsDarkMode != wasDarkMode)
+                    this.UiStyleChanged = true;
                 // Save tray icon style
                 string newTrayIconStyle = cmbTrayIcon.SelectedIndex switch {
                     1 => "Minimalist",
