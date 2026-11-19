@@ -14,7 +14,7 @@
     <!-- 软件名称 -->
     <AssemblyName>HM's Simple Brightness Tool</AssemblyName>
     <!-- 版本号：CI 发版时会自动递增 Patch -->
-    <Version>4.5.0</Version>
+    <Version>4.5.1</Version>
     <!-- 作者 -->
     <Company>HMwancheng</Company>
     <Authors>HMwancheng</Authors>
